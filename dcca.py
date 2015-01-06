@@ -175,22 +175,34 @@ def test_dcca(learning_rate=0.01, L1_reg=0.0001, L2_reg=0.0001, n_epochs=1000,
     rng = numpy.random.RandomState(1234)
 
     # construct the MLP class
-    classifier = MLP(
+    net1 = MLP(
         rng=rng,
         input=x,
         n_in=28 * 28,
-        n_hidden=n_hidden,
-        n_out=10
+        n_hidden=300,
+        n_out=50
+    )
+    net2 = MLP(
+        rng=rng,
+        input=y,
+        n_in=10,
+        n_hidden=20,
+        n_out=5
     )
 
     # start-snippet-4
     # the cost we minimize during training is the negative log likelihood of
     # the model plus the regularization terms (L1 and L2); cost is expressed
     # here symbolically
-    cost = (
-        classifier.mse(y)
-        + L1_reg * classifier.L1
-        + L2_reg * classifier.L2_sqr
+    cost1 = (
+        net1.correlation(net2.logRegressionLayer.output)
+        + L1_reg * net1.L1
+        + L2_reg * net1.L2_sqr
+    )
+    cost2 = (
+        net2.correlation(net1.logRegressionLayer.output)
+        + L1_reg * net2.L1
+        + L2_reg * net2.L2_sqr
     )
     # end-snippet-4
 
