@@ -25,9 +25,6 @@ http://deeplearning.net/tutorial/mlp.html
 
 """
 
-__docformat__ = 'restructedtext en'
-
-
 import os
 import sys
 import time
@@ -41,15 +38,15 @@ import theano.tensor as T
 
 class HiddenLayer(object):
     def __init__(self, rng, input, n_in, n_out, W=None, b=None,
-                 activation=T.tanh):
+                 activation=T.nnet.sigmoid):
         """
         Typical hidden layer of a MLP: units are fully-connected and have
         sigmoidal activation function. Weight matrix W is of shape (n_in,n_out)
         and the bias vector b is of shape (n_out,).
 
-        NOTE : The nonlinearity used here is tanh
+        NOTE : The nonlinearity used here is sigmoid
 
-        Hidden unit activation is given by: tanh(dot(input,W) + b)
+        Hidden unit activation is given by: sigmoid(dot(input,W) + b)
 
         :type rng: numpy.random.RandomState
         :param rng: a random number generator used to initialize weights
@@ -141,7 +138,7 @@ class MLP(object):
         """
 
         # Since we are dealing with a one hidden layer MLP, this will translate
-        # into a HiddenLayer with a tanh activation function connected to the
+        # into a HiddenLayer with a sigmoid activation function connected to the
         # LogisticRegression layer; the activation function can be replaced by
         # sigmoid or any other nonlinear function
         self.hiddenLayer = HiddenLayer(
@@ -188,7 +185,7 @@ class MLP(object):
         self.params = self.hiddenLayer.params + self.logRegressionLayer.params
         # end-snippet-3
 
-def test_mlp(learning_rate=0.01, L1_reg=0.001, L2_reg=0.0001, n_epochs=1000,
+def test_mlp(learning_rate=0.01, L1_reg=0.0001, L2_reg=0.0001, n_epochs=1000,
              dataset='mnist.pkl.gz', batch_size=20, n_hidden=500):
     """
     Demonstrate stochastic gradient descent optimization for a multilayer
