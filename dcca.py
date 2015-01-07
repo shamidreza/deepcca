@@ -39,10 +39,148 @@ import numpy
 import theano
 import theano.tensor as T
 
-from mlp import load_data, MLP, HiddenLayer
+from mlp import load_data, HiddenLayer
+
+class MLPCCA(object):
+    """Multi-Layer Perceptron Class
+
+    A multilayer perceptron is a feedforward artificial neural network model
+    that has one layer or more of hidden units and nonlinear activations.
+    Intermediate layers usually have as activation function tanh or the
+    sigmoid function (defined here by a ``HiddenLayer`` class).
+    """
+
+    def __init__(self, rng, input, n_in, n_hidden, n_out):
+        """Initialize the parameters for the multilayer perceptron
+
+        :type rng: numpy.random.RandomState
+        :param rng: a random number generator used to initialize weights
+
+        :type input: theano.tensor.TensorType
+        :param input: symbolic variable that describes the input of the
+        architecture (one minibatch)
+
+        :type n_in: int
+        :param n_in: number of input units, the dimension of the space in
+        which the datapoints lie
+
+        :type n_hidden: int
+        :param n_hidden: number of hidden units
+
+        :type n_out: int
+        :param n_out: number of output units, the dimension of the space in
+        which the labels lie
+
+        """
+
+        # Since we are dealing with a one hidden layer MLP, this will translate
+        # into a HiddenLayer with a sigmoid activation function connected to the
+        # LogisticRegression layer; the activation function can be replaced by
+        # sigmoid or any other nonlinear function
+        self.hiddenLayer = HiddenLayer(
+            rng=rng,
+            input=input,
+            n_in=n_in,
+            n_out=n_hidden,
+            activation=T.nnet.sigmoid
+        )
+
+        self.logRegressionLayer = CCALayer(
+            rng=rng,
+            input=self.hiddenLayer.output,
+            n_in=n_hidden,
+            n_out=n_out,
+            activation=T.nnet.sigmoid
+        )
+
+        # L1 norm ; one regularization option is to enforce L1 norm to
+        # be small
+        self.L1 = (
+            abs(self.hiddenLayer.W).sum()
+            + abs(self.logRegressionLayer.W).sum()
+        )
+
+        # square of L2 norm ; one regularization option is to enforce
+        # square of L2 norm to be small
+        self.L2_sqr = (
+            (self.hiddenLayer.W ** 2).sum()
+            + (self.logRegressionLayer.W ** 2).sum()
+        )
+
+        # negative log likelihood of the MLP is given by the negative
+        # log likelihood of the output of the model, computed in the
+        # logistic regression layer
+        self.mse = (
+            self.logRegressionLayer.mse
+        )
+        # same holds for the function computing the number of errors
+        self.errors = self.logRegressionLayer.errors
+
+        # the parameters of the model are the parameters of the two layer it is
+        # made out of
+        self.params = self.hiddenLayer.params + self.logRegressionLayer.params
+        # end-snippet-3
+
+
+
+class DCCA(object):
+    def __init__(self, rng, input, n_in, n_hidden, n_out):    
+        self.hiddenLayer1 = HiddenLayer(
+            rng=rng,
+            input=input,
+            n_in=n_in,
+            n_out=n_hidden,
+            activation=T.nnet.sigmoid
+        )
+
+        self.lastLayer1 = CCALayer(
+            rng=rng,
+            input=self.hiddenLayer.output,
+            n_in=n_hidden,
+            n_out=n_out,
+            activation=T.nnet.sigmoid
+        )
+        
+        self.hiddenLayer2 = HiddenLayer(
+            rng=rng,
+            input=input,
+            n_in=n_in,
+            n_out=n_hidden,
+            activation=T.nnet.sigmoid
+        )
+
+        self.lastLayer2 = CCALayer(
+            rng=rng,
+            input=self.hiddenLayer.output,
+            n_in=n_hidden,
+            n_out=n_out,
+            activation=T.nnet.sigmoid
+        )
+
+        # L1 norm ; one regularization option is to enforce L1 norm to
+        # be small
+        self.L1 = (
+            abs(self.hiddenLayer.W).sum()
+            + abs(self.lastLayer.W).sum()
+        )
+
+        # square of L2 norm ; one regularization option is to enforce
+        # square of L2 norm to be small
+        self.L2_sqr = (
+            (self.hiddenLayer.W ** 2).sum()
+            + (self.lastLayer.W ** 2).sum()
+        )
+
+        self.correlation = (
+            self.lastLayer.correlation
+        )
+        
+        self.errors = self.lastLayer.errors
+       
+        self.params = self.hiddenLayer.params + self.lastLayer.params
 
 class CCALayer(object):
-    def __init__(self, rng, input, n_in, n_out, W=None, b=None,
+    def __init__(self, rng, x1, x2, n_in, n_out, W=None, b=None,
                  activation=T.nnet.sigmoid):
         """
         Typical hidden layer of a MLP: units are fully-connected and have
@@ -208,9 +346,10 @@ def test_dcca(learning_rate=0.01, L1_reg=0.0001, L2_reg=0.0001, n_epochs=1000,
 
     # compiling a Theano function that computes the mistakes that are made
     # by the model on a minibatch
+    """
     test_model = theano.function(
         inputs=[index],
-        outputs=classifier.errors(y),
+        outputs=net1.errors(y),
         givens={
             x: test_set_x[index * batch_size:(index + 1) * batch_size],
             y: test_set_y[index * batch_size:(index + 1) * batch_size]
@@ -225,11 +364,13 @@ def test_dcca(learning_rate=0.01, L1_reg=0.0001, L2_reg=0.0001, n_epochs=1000,
             y: valid_set_y[index * batch_size:(index + 1) * batch_size]
         }
     )
+    """
 
     # start-snippet-5
     # compute the gradient of cost with respect to theta (sotred in params)
     # the resulting gradients will be stored in a list gparams
-    gparams = [T.grad(cost, param) for param in classifier.params]
+    gparams1 = [T.grad(cost1, param) for param in net1.params]
+    gparams2 = [T.grad(cost2, param) for param in net2.params]
 
     # specify how to update the parameters of the model as a list of
     # (variable, update expression) pairs
@@ -238,18 +379,31 @@ def test_dcca(learning_rate=0.01, L1_reg=0.0001, L2_reg=0.0001, n_epochs=1000,
     # same length, zip generates a list C of same size, where each element
     # is a pair formed from the two lists :
     #    C = [(a1, b1), (a2, b2), (a3, b3), (a4, b4)]
-    updates = [
+    updates1 = [
         (param, param - learning_rate * gparam)
-        for param, gparam in zip(classifier.params, gparams)
+        for param, gparam in zip(net1.params, gparams1)
+    ]
+    updates2 = [
+        (param, param - learning_rate * gparam)
+        for param, gparam in zip(net2.params, gparams2)
     ]
 
     # compiling a Theano function `train_model` that returns the cost, but
     # in the same time updates the parameter of the model based on the rules
     # defined in `updates`
-    train_model = theano.function(
+    train_model1 = theano.function(
         inputs=[index],
-        outputs=cost,
-        updates=updates,
+        outputs=cost1,
+        updates=updates1,
+        givens={
+            x: train_set_x[index * batch_size: (index + 1) * batch_size],
+            y: train_set_y[index * batch_size: (index + 1) * batch_size]
+        }
+    )
+    train_model2 = theano.function(
+        inputs=[index],
+        outputs=cost2,
+        updates=updates2,
         givens={
             x: train_set_x[index * batch_size: (index + 1) * batch_size],
             y: train_set_y[index * batch_size: (index + 1) * batch_size]
