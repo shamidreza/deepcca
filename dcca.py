@@ -39,7 +39,7 @@ import numpy
 import theano
 import theano.tensor as T
 
-from mlp import load_data, HiddenLayer
+from mlp import load_data, HiddenLayer, MLP
 
 class MLPCCA(object):
     """Multi-Layer Perceptron Class
@@ -123,25 +123,74 @@ class MLPCCA(object):
 
 
 
-class DCCA(object):
-    def __init__(self, rng, input, n_in, n_hidden, n_out):    
+class DCCAold(object):
+    def __init__(self, rng, x1, x2, n_in1, n_hidden1, n_out1, n_in2, n_hidden2, n_out2):    
         self.hiddenLayer1 = HiddenLayer(
             rng=rng,
-            input=input,
-            n_in=n_in,
-            n_out=n_hidden,
+            input=x1,
+            n_in=n_in1,
+            n_out=n_hidden1,
             activation=T.nnet.sigmoid
         )
 
         self.lastLayer1 = CCALayer(
             rng=rng,
-            input=self.hiddenLayer.output,
-            n_in=n_hidden,
-            n_out=n_out,
+            input=self.hiddenLayer1.output,
+            n_in=n_hidden1,
+            n_out=n_out1,
             activation=T.nnet.sigmoid
         )
         
         self.hiddenLayer2 = HiddenLayer(
+            rng=rng,
+            input=x2,
+            n_in=n_in2,
+            n_out=n_hidden2,
+            activation=T.nnet.sigmoid
+        )
+
+        self.lastLayer2 = CCALayer(
+            rng=rng,
+            input=self.hiddenLayer2.output,
+            n_in=n_hidden2,
+            n_out=n_out2,
+            activation=T.nnet.sigmoid
+        )
+
+        # L1 norm ; one regularization option is to enforce L1 norm to
+        # be small
+        self.L11 = (
+            abs(self.hiddenLayer1.W).sum()
+            + abs(self.lastLayer1.W).sum()
+        )
+
+        self.L12 = (
+            abs(self.hiddenLayer2.W).sum()
+            + abs(self.lastLayer2.W).sum()
+        )
+        # square of L2 norm ; one regularization option is to enforce
+        # square of L2 norm to be small
+        self.L2_sqr1 = (
+            (self.hiddenLayer1.W ** 2).sum()
+            + (self.lastLayer1.W ** 2).sum()
+        )
+        self.L2_sqr2 = (
+            (self.hiddenLayer2.W ** 2).sum()
+            + (self.lastLayer2.W ** 2).sum()
+        )
+
+        self.correlation = (
+            self.lastLayer1.correlation
+        )
+        
+        self.errors = self.lastLayer1.errors
+       
+        self.params1 = self.hiddenLayer1.params + self.lastLayer1.params
+        self.params2 = self.hiddenLayer2.params + self.lastLayer2.params
+
+class DCCA(MLP):
+    def __init__(self, rng, input, n_in, n_hidden, n_out):
+        self.hiddenLayer = HiddenLayer(
             rng=rng,
             input=input,
             n_in=n_in,
@@ -149,7 +198,7 @@ class DCCA(object):
             activation=T.nnet.sigmoid
         )
 
-        self.lastLayer2 = CCALayer(
+        self.lastLayer = CCALayer(
             rng=rng,
             input=self.hiddenLayer.output,
             n_in=n_hidden,
@@ -157,15 +206,11 @@ class DCCA(object):
             activation=T.nnet.sigmoid
         )
 
-        # L1 norm ; one regularization option is to enforce L1 norm to
-        # be small
         self.L1 = (
             abs(self.hiddenLayer.W).sum()
             + abs(self.lastLayer.W).sum()
         )
 
-        # square of L2 norm ; one regularization option is to enforce
-        # square of L2 norm to be small
         self.L2_sqr = (
             (self.hiddenLayer.W ** 2).sum()
             + (self.lastLayer.W ** 2).sum()
@@ -174,13 +219,12 @@ class DCCA(object):
         self.correlation = (
             self.lastLayer.correlation
         )
-        
-        self.errors = self.lastLayer.errors
-       
-        self.params = self.hiddenLayer.params + self.lastLayer.params
-
-class CCALayer(object):
-    def __init__(self, rng, x1, x2, n_in, n_out, W=None, b=None,
+        #self.errors = self.lastLayer.errors
+        self.output = self.lastLayer.output
+        self.params = self.hiddenLayer.params + self.lastLayer.params        
+    
+class CCALayer(HiddenLayer):
+    def __init__(self, rng, input, n_in, n_out, W=None, b=None,
                  activation=T.nnet.sigmoid):
         """
         Typical hidden layer of a MLP: units are fully-connected and have
@@ -210,7 +254,11 @@ class CCALayer(object):
         self.n_in = n_in
         self.n_out = n_out
         self.input = input
+        self.activation = activation
+
         self.r1 = 0.001
+        self.r2 = 0.001
+
         if W is None:
             W_values = numpy.asarray(
                 rng.uniform(
@@ -231,35 +279,30 @@ class CCALayer(object):
 
         self.W = W
         self.b = b
-
+        
         lin_output = T.dot(input, self.W) + self.b
         self.output = (
-            lin_output if activation is None
-            else activation(lin_output)
+            lin_output if self.activation is None
+            else self.activation(lin_output)
         )
+        
         self.params = [self.W, self.b]
 
-    def mse(self, y):
-        return T.mean((self.output-y)**2)
     def correlation(self, H2):
         H1 = self.output
-        H1bar = H1 - (1.0/self.n_out)*T.dot(H1, one)
-        H2bar = H2 - (1.0/self.n_out)*T.dot(H2, one)
+        
+        H1bar = H1 - T.mean(H1,axis=0)#(1.0/self.n_out)*T.dot(H1, T.ones_like())
+        H2bar = H2 - T.mean(H2,axis=0)#(1.0/self.n_out)*T.dot(H2, T.ones_like())
         SigmaHat12 = (1.0/(self.n_out-1))*T.dot(H1bar, H2bar.T)
         SigmaHat11 = (1.0/(self.n_out-1))*T.dot(H1bar, H1bar.T)
         SigmaHat11 = SigmaHat11 + self.r1*T.identity_like(SigmaHat11)
+        SigmaHat22 = (1.0/(self.n_out-1))*T.dot(H2bar, H2bar.T)
+        SigmaHat22 = SigmaHat22 + self.r2*T.identity_like(SigmaHat22)
         Tval = T.dot(SigmaHat11**(-0.5), T.dot(SigmaHat12, SigmaHat22**(-0.5)))
         corr = T.nlinalg.trace(T.dot(Tval.T, Tval))**(0.5)
-    def errors(self, y):
-        # check if y has same dimension of y_pred
-        if y.ndim != self.output.ndim:
-            raise TypeError(
-                'y should have the same shape as self.y_pred',
-                ('y', y.type, 'output', self.output.type)
-            )
-        return T.mean((self.output-y)**2)
-
-def test_dcca(learning_rate=0.01, L1_reg=0.0001, L2_reg=0.0001, n_epochs=1000,
+        return corr
+   
+def test_dcca_old(learning_rate=0.01, L1_reg=0.0001, L2_reg=0.0001, n_epochs=1000,
              dataset='mnist.pkl.gz', batch_size=20, n_hidden=500):
     """
     Demonstrate stochastic gradient descent optimization for a multilayer
@@ -313,34 +356,48 @@ def test_dcca(learning_rate=0.01, L1_reg=0.0001, L2_reg=0.0001, n_epochs=1000,
     rng = numpy.random.RandomState(1234)
 
     # construct the MLP class
-    net1 = MLP(
+    if 0:
+        net1 = MLP(
+            rng=rng,
+            input=x,
+            n_in=28 * 28,
+            n_hidden=300,
+            n_out=50
+        )
+        net2 = MLP(
+            rng=rng,
+            input=y,
+            n_in=10,
+            n_hidden=20,
+            n_out=5
+        )
+    
+    net = DCCA(
         rng=rng,
-        input=x,
-        n_in=28 * 28,
-        n_hidden=300,
-        n_out=50
+        x1=x,
+        x2=y,
+        n_in1=28 * 28,
+        n_hidden1=300,
+        n_out1=50,
+        n_in2=10,
+        n_hidden2=20,
+        n_out2=5
     )
-    net2 = MLP(
-        rng=rng,
-        input=y,
-        n_in=10,
-        n_hidden=20,
-        n_out=5
-    )
+  
 
     # start-snippet-4
     # the cost we minimize during training is the negative log likelihood of
     # the model plus the regularization terms (L1 and L2); cost is expressed
     # here symbolically
     cost1 = (
-        net1.correlation(net2.logRegressionLayer.output)
-        + L1_reg * net1.L1
-        + L2_reg * net1.L2_sqr
+        net.correlation(y)
+        + L1_reg * net.L11
+        + L2_reg * net.L2_sqr1
     )
     cost2 = (
-        net2.correlation(net1.logRegressionLayer.output)
-        + L1_reg * net2.L1
-        + L2_reg * net2.L2_sqr
+        net.correlation(y)
+        + L1_reg * net.L12
+        + L2_reg * net.L2_sqr2
     )
     # end-snippet-4
 
@@ -369,8 +426,8 @@ def test_dcca(learning_rate=0.01, L1_reg=0.0001, L2_reg=0.0001, n_epochs=1000,
     # start-snippet-5
     # compute the gradient of cost with respect to theta (sotred in params)
     # the resulting gradients will be stored in a list gparams
-    gparams1 = [T.grad(cost1, param) for param in net1.params]
-    gparams2 = [T.grad(cost2, param) for param in net2.params]
+    gparams1 = [T.grad(cost1, param) for param in net.params1]
+    gparams2 = [T.grad(cost2, param) for param in net.params2]
 
     # specify how to update the parameters of the model as a list of
     # (variable, update expression) pairs
@@ -381,11 +438,11 @@ def test_dcca(learning_rate=0.01, L1_reg=0.0001, L2_reg=0.0001, n_epochs=1000,
     #    C = [(a1, b1), (a2, b2), (a3, b3), (a4, b4)]
     updates1 = [
         (param, param - learning_rate * gparam)
-        for param, gparam in zip(net1.params, gparams1)
+        for param, gparam in zip(net.params1, gparams1)
     ]
     updates2 = [
         (param, param - learning_rate * gparam)
-        for param, gparam in zip(net2.params, gparams2)
+        for param, gparam in zip(net.params2, gparams2)
     ]
 
     # compiling a Theano function `train_model` that returns the cost, but
@@ -578,6 +635,299 @@ def test_dcca(learning_rate=0.01, L1_reg=0.0001, L2_reg=0.0001, n_epochs=1000,
             (test_set_x, test_set_y)]
     return rval
 
+
+def test_dcca(learning_rate=0.01, L1_reg=0.0001, L2_reg=0.0001, n_epochs=1000,
+             dataset='mnist.pkl.gz', batch_size=20, n_hidden=500):
+    """
+    Demonstrate stochastic gradient descent optimization for a multilayer
+    perceptron
+
+    This is demonstrated on MNIST.
+
+    :type learning_rate: float
+    :param learning_rate: learning rate used (factor for the stochastic
+    gradient
+
+    :type L1_reg: float
+    :param L1_reg: L1-norm's weight when added to the cost (see
+    regularization)
+
+    :type L2_reg: float
+    :param L2_reg: L2-norm's weight when added to the cost (see
+    regularization)
+
+    :type n_epochs: int
+    :param n_epochs: maximal number of epochs to run the optimizer
+
+    :type dataset: string
+    :param dataset: the path of the MNIST dataset file from
+                 http://www.iro.umontreal.ca/~lisa/deep/data/mnist/mnist.pkl.gz
+
+
+   """
+    datasets = load_data(dataset)
+
+    train_set_x, train_set_y = datasets[0]
+    valid_set_x, valid_set_y = datasets[1]
+    test_set_x, test_set_y = datasets[2]
+
+    # compute number of minibatches for training, validation and testing
+    n_train_batches = train_set_x.get_value(borrow=True).shape[0] / batch_size
+    n_valid_batches = valid_set_x.get_value(borrow=True).shape[0] / batch_size
+    n_test_batches = test_set_x.get_value(borrow=True).shape[0] / batch_size
+
+    ######################
+    # BUILD ACTUAL MODEL #
+    ######################
+    print '... building the model'
+
+    # allocate symbolic variables for the data
+    index = T.lscalar()  # index to a [mini]batch
+    x1 = T.matrix('x1')  # the data is presented as rasterized images
+    x2 = T.matrix('x2')  # the labels are presented as 1D vector of
+                        # [int] labels
+    h1 = T.matrix('h1')  # the data is presented as rasterized images
+    h2 = T.matrix('h2')  # the labels are presented as 1D vector of
+
+    rng = numpy.random.RandomState(1234)
+
+    # construct the MLP class
+    net1 = DCCA(
+        rng=rng,
+        input=x1,
+        n_in=28 * 28,
+        n_hidden=300,
+        n_out=8
+    )
+    net2 = DCCA(
+        rng=rng,
+        input=x2,
+        n_in=10,
+        n_hidden=20,
+        n_out=8
+    )
+  
+    # start-snippet-4
+    # the cost we minimize during training is the negative log likelihood of
+    # the model plus the regularization terms (L1 and L2); cost is expressed
+    # here symbolically
+    cost1 = (
+        net1.correlation(h2)
+        + L1_reg * net1.L1
+        + L2_reg * net1.L2_sqr
+    )
+    cost2 = (
+        net2.correlation(h1)
+        + L1_reg * net2.L1
+        + L2_reg * net2.L2_sqr
+    )
+   
+    """
+    test_model = theano.function(
+        inputs=[index],
+        outputs=net1.errors(y),
+        givens={
+            x: test_set_x[index * batch_size:(index + 1) * batch_size],
+            y: test_set_y[index * batch_size:(index + 1) * batch_size]
+        }
+    )
+
+    validate_model = theano.function(
+        inputs=[index],
+        outputs=classifier.errors(y),
+        givens={
+            x: valid_set_x[index * batch_size:(index + 1) * batch_size],
+            y: valid_set_y[index * batch_size:(index + 1) * batch_size]
+        }
+    )
+    """
+    fprop_model1 = theano.function(
+        inputs=[],
+        outputs=net1.output,
+        givens={
+            x1: test_set_x
+        }
+    )
+    fprop_model2 = theano.function(
+        inputs=[],
+        outputs=net2.output,
+        givens={
+            x2: test_set_y
+        }
+    )
+
+   
+    gparams1 = [T.grad(cost1, param) for param in net1.params]
+    gparams2 = [T.grad(cost2, param) for param in net2.params]
+
+    updates1 = [
+        (param, param - learning_rate * gparam)
+        for param, gparam in zip(net1.params, gparams1)
+    ]
+    updates2 = [
+        (param, param - learning_rate * gparam)
+        for param, gparam in zip(net2.params, gparams2)
+    ]
+    
+    ###############
+    # TRAIN MODEL #
+    ###############
+    print '... training'
+
+    # early-stopping parameters
+    patience = 10000  # look as this many examples regardless
+    patience_increase = 2  # wait this much longer when a new best is
+                           # found
+    improvement_threshold = 0.995  # a relative improvement of this much is
+                                   # considered significant
+    validation_frequency = min(n_train_batches, patience / 2)
+                                  # go through this many
+                                  # minibatche before checking the network
+                                  # on the validation set; in this case we
+                                  # check every epoch
+
+    best_validation_loss = numpy.inf
+    best_iter = 0
+    test_score = 0.
+    start_time = time.clock()
+
+    epoch = 0
+    done_looping = False
+
+    while (epoch < n_epochs) and (not done_looping):
+        epoch = epoch + 1
+        print 'epoch', epoch
+        #net1.fprop(test_set_x)
+        #net2.fprop(test_set_y)
+        h1tmpval = fprop_model1()
+        h2tmpval = fprop_model2()
+
+        #X_theano = theano.shared(value=X, name='inputs')
+        #h1tmp = theano.shared( value=h1tmpval, name='hidden1_rep', dtype=theano.config.floatX , borrow=True)
+        h1tmp = theano.shared(numpy.asarray(h1tmpval,dtype=theano.config.floatX),
+                                 borrow=True)
+        #h2tmp = theano.shared( value=h2tmpval, name='hidden2_rep', dtype=theano.config.floatX , borrow=True)
+        h2tmp = theano.shared(numpy.asarray(h2tmpval,dtype=theano.config.floatX),
+                                 borrow=True)
+        #h1tmp = T.shared( value=net1.output.eval(), name='hidden1_rep' )
+        #h2tmp = T.shared( net2.output.eval() )
+
+        train_model1 = theano.function(
+            inputs=[],
+            outputs=cost1,
+            updates=updates1,
+            givens={
+                x1: train_set_x,
+                h2: h2tmp
+            }
+        )
+        train_model2 = theano.function(
+            inputs=[],
+            outputs=cost2,
+            updates=updates2,
+            givens={
+                x2: train_set_y,
+                h1: h1tmp,
+            }
+        )
+       
+        minibatch_avg_cost = train_model1()
+        minibatch_avg_cost = train_model2()
+
+        if epoch > 10:
+            break
+
+    end_time = time.clock()
+    print(('Optimization complete. Best validation score of %f %% '
+           'obtained at iteration %i, with test performance %f %%') %
+          (best_validation_loss * 100., best_iter + 1, test_score * 100.))
+    print >> sys.stderr, ('The code for file ' +
+                          os.path.split(__file__)[1] +
+                          ' ran for %.2fm' % ((end_time - start_time) / 60.))
+
+
+    ''' Loads the dataset
+
+    :type dataset: string
+    :param dataset: the path to the dataset (here MNIST)
+    '''
+
+    #############
+    # LOAD DATA #
+    #############
+
+    # Download the MNIST dataset if it is not present
+    data_dir, data_file = os.path.split(dataset)
+    if data_dir == "" and not os.path.isfile(dataset):
+        # Check if dataset is in the data directory.
+        new_path = os.path.join(
+            os.path.split(__file__)[0],
+            "..",
+            "data",
+            dataset
+        )
+        if os.path.isfile(new_path) or data_file == 'mnist.pkl.gz':
+            dataset = new_path
+
+    if (not os.path.isfile(dataset)) and data_file == 'mnist.pkl.gz':
+        import urllib
+        origin = (
+            'http://www.iro.umontreal.ca/~lisa/deep/data/mnist/mnist.pkl.gz'
+        )
+        print 'Downloading data from %s' % origin
+        urllib.urlretrieve(origin, dataset)
+
+    print '... loading data'
+
+    # Load the dataset
+    f = gzip.open(dataset, 'rb')
+    train_set, valid_set, test_set = cPickle.load(f)
+    f.close()
+    #train_set, valid_set, test_set format: tuple(input, target)
+    #input is an numpy.ndarray of 2 dimensions (a matrix)
+    #witch row's correspond to an example. target is a
+    #numpy.ndarray of 1 dimensions (vector)) that have the same length as
+    #the number of rows in the input. It should give the target
+    #target to the example with the same index in the input.
+
+    def shared_dataset(data_xy, borrow=True):
+        """ Function that loads the dataset into shared variables
+
+        The reason we store our dataset in shared variables is to allow
+        Theano to copy it into the GPU memory (when code is run on GPU).
+        Since copying data into the GPU is slow, copying a minibatch everytime
+        is needed (the default behaviour if the data is not in a shared
+        variable) would lead to a large decrease in performance.
+        """
+        #import copy
+        data_x, data_y = data_xy
+        #daya_y = copy.deepcopy(data_x)
+        data_y_new = numpy.zeros((data_y.shape[0], data_y.max()+1))
+        for i in range(data_y.shape[0]):
+            data_y_new[i, data_y[i]] = 1
+        data_y = data_y_new
+        shared_x = theano.shared(numpy.asarray(data_x,
+                                               dtype=theano.config.floatX),
+                                 borrow=borrow)
+        shared_y = theano.shared(numpy.asarray(data_y,
+                                               dtype=theano.config.floatX),
+                                 borrow=borrow)
+        # When storing data on the GPU it has to be stored as floats
+        # therefore we will store the labels as ``floatX`` as well
+        # (``shared_y`` does exactly that). But during our computations
+        # we need them as ints (we use labels as index, and if they are
+        # floats it doesn't make sense) therefore instead of returning
+        # ``shared_y`` we will have to cast it to int. This little hack
+        # lets ous get around this issue
+        return shared_x, shared_y
+
+    test_set_x, test_set_y = shared_dataset(test_set)
+    valid_set_x, valid_set_y = shared_dataset(valid_set)
+    train_set_x, train_set_y = shared_dataset(train_set)
+
+    rval = [(train_set_x, train_set_y), (valid_set_x, valid_set_y),
+            (test_set_x, test_set_y)]
+    return rval
 
 if __name__ == '__main__':
     test_dcca()
