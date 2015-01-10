@@ -289,10 +289,10 @@ class CCALayer(HiddenLayer):
         self.params = [self.W, self.b]
 
     def correlation(self, H2):
-        H1 = self.output
+        H1 = self.output.T
         
-        H1bar = H1 - T.mean(H1,axis=0)#(1.0/self.n_out)*T.dot(H1, T.ones_like())
-        H2bar = H2 - T.mean(H2,axis=0)#(1.0/self.n_out)*T.dot(H2, T.ones_like())
+        H1bar = H1 #- T.mean(H1,axis=0)#(1.0/self.n_out)*T.dot(H1, T.ones_like())
+        H2bar = H2 #- T.mean(H2,axis=0)#(1.0/self.n_out)*T.dot(H2, T.ones_like())
         SigmaHat12 = (1.0/(self.n_out-1))*T.dot(H1bar, H2bar.T)
         SigmaHat11 = (1.0/(self.n_out-1))*T.dot(H1bar, H1bar.T)
         SigmaHat11 = SigmaHat11 + self.r1*T.identity_like(SigmaHat11)
@@ -300,7 +300,7 @@ class CCALayer(HiddenLayer):
         SigmaHat22 = SigmaHat22 + self.r2*T.identity_like(SigmaHat22)
         Tval = T.dot(SigmaHat11**(-0.5), T.dot(SigmaHat12, SigmaHat22**(-0.5)))
         corr = T.nlinalg.trace(T.dot(Tval.T, Tval))**(0.5)
-        return corr
+        return -1*corr
    
 def test_dcca_old(learning_rate=0.01, L1_reg=0.0001, L2_reg=0.0001, n_epochs=1000,
              dataset='mnist.pkl.gz', batch_size=20, n_hidden=500):
@@ -706,11 +706,7 @@ def test_dcca(learning_rate=0.01, L1_reg=0.0001, L2_reg=0.0001, n_epochs=1000,
         n_hidden=20,
         n_out=8
     )
-  
-    # start-snippet-4
-    # the cost we minimize during training is the negative log likelihood of
-    # the model plus the regularization terms (L1 and L2); cost is expressed
-    # here symbolically
+ 
     cost1 = (
         net1.correlation(h2)
         + L1_reg * net1.L1
@@ -799,9 +795,20 @@ def test_dcca(learning_rate=0.01, L1_reg=0.0001, L2_reg=0.0001, n_epochs=1000,
         print 'epoch', epoch
         #net1.fprop(test_set_x)
         #net2.fprop(test_set_y)
-        h1tmpval = fprop_model1()
-        h2tmpval = fprop_model2()
-
+        h1tmpval = fprop_model1().T
+        h2tmpval = fprop_model2().T
+        if 1:
+            H1 = h1tmpval
+            H2 = h2tmpval
+            H1bar = H1 -(1.0/8.0)*numpy.dot(H1, numpy.ones((H1.shape[1],H1.shape[1])))
+            H2bar = H2 -(1.0/8.0)*numpy.dot(H2, numpy.ones((H1.shape[1],H1.shape[1])))
+            SigmaHat12 = (1.0/(8-1))*numpy.dot(H1bar, H2bar.T)
+            SigmaHat11 = (1.0/(8-1))*numpy.dot(H1bar, H1bar.T)
+            SigmaHat11 = SigmaHat11 + 0.0001*numpy.identity(SigmaHat11.shape[0])
+            SigmaHat22 = (1.0/(8-1))*numpy.dot(H2bar, H2bar.T)
+            SigmaHat22 = SigmaHat22 + 0.0001*numpy.identity(SigmaHat22.shape[0])
+            Tval = numpy.dot(SigmaHat11**(-0.5), numpy.dot(SigmaHat12, SigmaHat22**(-0.5)))
+            corr = numpy.trace(numpy.dot(Tval.T, Tval))**(0.5)
         #X_theano = theano.shared(value=X, name='inputs')
         #h1tmp = theano.shared( value=h1tmpval, name='hidden1_rep', dtype=theano.config.floatX , borrow=True)
         h1tmp = theano.shared(numpy.asarray(h1tmpval,dtype=theano.config.floatX),
@@ -817,7 +824,7 @@ def test_dcca(learning_rate=0.01, L1_reg=0.0001, L2_reg=0.0001, n_epochs=1000,
             outputs=cost1,
             updates=updates1,
             givens={
-                x1: train_set_x,
+                x1: test_set_x,
                 h2: h2tmp
             }
         )
@@ -826,13 +833,15 @@ def test_dcca(learning_rate=0.01, L1_reg=0.0001, L2_reg=0.0001, n_epochs=1000,
             outputs=cost2,
             updates=updates2,
             givens={
-                x2: train_set_y,
+                x2: test_set_y,
                 h1: h1tmp,
             }
         )
        
-        minibatch_avg_cost = train_model1()
-        minibatch_avg_cost = train_model2()
+        minibatch_avg_cost1 = train_model1()
+        minibatch_avg_cost2 = train_model2()
+        print 'corr1', minibatch_avg_cost1
+        print 'corr2', minibatch_avg_cost2
 
         if epoch > 10:
             break
