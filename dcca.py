@@ -300,6 +300,12 @@ class CCALayer(HiddenLayer):
         SigmaHat22 = SigmaHat22 + self.r2*T.identity_like(SigmaHat22)
         Tval = T.dot(SigmaHat11**(-0.5), T.dot(SigmaHat12, SigmaHat22**(-0.5)))
         corr = T.nlinalg.trace(T.dot(Tval.T, Tval))**(0.5)
+        self.SigmaHat11 = SigmaHat11
+        self.SigmaHat12 = SigmaHat12
+        self.SigmaHat22 = SigmaHat22
+        self.H1bar = H1bar
+        self.H2bar = H2bar
+        self.Tval = Tval
         return -1*corr
    
 def test_dcca_old(learning_rate=0.01, L1_reg=0.0001, L2_reg=0.0001, n_epochs=1000,
@@ -751,10 +757,34 @@ def test_dcca(learning_rate=0.01, L1_reg=0.0001, L2_reg=0.0001, n_epochs=1000,
             x2: test_set_y
         }
     )
+    if 1: # grad compute for net1
+        U, V, D = theano.tensor.nlinalg.svd(net1.lastLayer.Tval)
+        UVT = T.dot(U, V.T)
+        Delta12 = T.dot(net1.lastLayer.SigmaHat11**(-0.5), T.dot(UVT, net1.lastLayer.SigmaHat22**(-0.5)))
+        UDUT = T.dot(U, T.dot(D, U.T))
+        Delta11 = (-0.5) * T.dot(net1.lastLayer.SigmaHat11**(-0.5), T.dot(UVT, net1.lastLayer.SigmaHat22**(-0.5)))
+        grad_E_to_o = (1.0/8) * (2*Delta11*net1.lastLayer.H1bar+Delta12*net1.lastLayer.H2bar)
+        gparam1_W = (grad_E_to_o) * (net1.lastLayer.output*(1-net1.lastLayer.output)) * (net1.hiddenLayer.output)
+        gparam1_b = (grad_E_to_o) * (net1.lastLayer.output*(1-net1.lastLayer.output)) * 1
+        #gparams1 = [T.grad(cost1, param) for param in net1.params]
+        gparams1 = [T.grad(cost1, param) for param in net1.hiddenLayer.params]
+        gparams1.append(gparam1_W)
+        gparams1.append(gparam1_b)
+    if 1: # grad compute for net2
+        U, V, D = theano.tensor.nlinalg.svd(net2.lastLayer.Tval)
+        UVT = T.dot(U, V.T)
+        Delta12 = T.dot(net2.lastLayer.SigmaHat11**(-0.5), T.dot(UVT, net2.lastLayer.SigmaHat22**(-0.5)))
+        UDUT = T.dot(U, T.dot(D, U.T))
+        Delta11 = (-0.5) * T.dot(net2.lastLayer.SigmaHat11**(-0.5), T.dot(UVT, net2.lastLayer.SigmaHat22**(-0.5)))
+        grad_E_to_o = (1.0/8) * (2*Delta11*net2.lastLayer.H1bar+Delta12*net2.lastLayer.H2bar)
+        gparam2_W = (grad_E_to_o) * (net2.lastLayer.output*(1-net2.lastLayer.output)) * (net2.hiddenLayer.output)
+        gparam2_b = (grad_E_to_o) * (net2.lastLayer.output*(1-net2.lastLayer.output)) * 1
+        #gparams1 = [T.grad(cost1, param) for param in net1.params]
+        gparams2 = [T.grad(cost2, param) for param in net2.hiddenLayer.params]
+        gparams2.append(gparam2_W)
+        gparams2.append(gparam2_b)
 
-   
-    gparams1 = [T.grad(cost1, param) for param in net1.params]
-    gparams2 = [T.grad(cost2, param) for param in net2.params]
+        #gparams2 = [T.grad(cost2, param) for param in net2.params]
 
     updates1 = [
         (param, param - learning_rate * gparam)
