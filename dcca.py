@@ -39,8 +39,12 @@ import numpy
 import theano
 import theano.tensor as T
 
-from mlp import load_data, HiddenLayer, MLP
+import scipy.linalg
 
+from mlp import load_data, HiddenLayer, MLP
+def mat_pow(matrix):
+    return scipy.linalg.sqrtm(numpy.linalg.inv(matrix))
+            
 class MLPCCA(object):
     """Multi-Layer Perceptron Class
 
@@ -219,6 +223,9 @@ class DCCA(MLP):
         self.correlation = (
             self.lastLayer.correlation
         )
+        self.correlation_numpy = (
+            self.lastLayer.correlation_numpy
+        )
         #self.errors = self.lastLayer.errors
         self.output = self.lastLayer.output
         self.params = self.hiddenLayer.params + self.lastLayer.params        
@@ -289,15 +296,15 @@ class CCALayer(HiddenLayer):
         ##self.params = [self.W, self.b]
         self.params = [self.W]
 
-    def correlation(self, H2):
-        H1 = self.output.T
-        
-        H1bar = H1 #- T.mean(H1,axis=0)#(1.0/self.n_out)*T.dot(H1, T.ones_like())
-        H2bar = H2 #- T.mean(H2,axis=0)#(1.0/self.n_out)*T.dot(H2, T.ones_like())
-        SigmaHat12 = (1.0/(self.n_out-1))*T.dot(H1bar, H2bar.T)
-        SigmaHat11 = (1.0/(self.n_out-1))*T.dot(H1bar, H1bar.T)
+    def correlation(self, H1, H2):
+        #H1 = self.output.T
+        m=10000
+        H1bar = H1 #- (1.0/m)*T.dot(H1, T.shared(numpy.ones((m,m))))
+        H2bar = H2 #- (1.0/m)*T.dot(H1, T.ones_like(numpy.ones((m,m))))
+        SigmaHat12 = (1.0/(m-1))*T.dot(H1bar, H2bar.T)
+        SigmaHat11 = (1.0/(m-1))*T.dot(H1bar, H1bar.T)
         SigmaHat11 = SigmaHat11 + self.r1*T.identity_like(SigmaHat11)
-        SigmaHat22 = (1.0/(self.n_out-1))*T.dot(H2bar, H2bar.T)
+        SigmaHat22 = (1.0/(m-1))*T.dot(H2bar, H2bar.T)
         SigmaHat22 = SigmaHat22 + self.r2*T.identity_like(SigmaHat22)
         Tval = T.dot(SigmaHat11**(-0.5), T.dot(SigmaHat12, SigmaHat22**(-0.5)))
         corr = T.nlinalg.trace(T.dot(Tval.T, Tval))**(0.5)
@@ -308,7 +315,20 @@ class CCALayer(HiddenLayer):
         self.H2bar = H2bar
         self.Tval = Tval
         return -1*corr
-   
+    def correlation_numpy(self, H1, H2):
+        m = H1.shape[1]
+        
+        H1bar = H1#.eval() #- (1.0/m)*numpy.dot(H1, numpy.ones((m,m), dtype=numpy.float32))
+        H2bar = H2#.eval() #- (1.0/m)*numpy.dot(H2, numpy.ones((m,m), dtype=numpy.float32))
+        SigmaHat12 = (1.0/(m-1))*numpy.dot(H1bar, H2bar.T)
+        SigmaHat11 = (1.0/(m-1))*numpy.dot(H1bar, H1bar.T)
+        SigmaHat11 = SigmaHat11 + 0.0001*numpy.identity(SigmaHat11.shape[0], dtype=numpy.float32)
+        SigmaHat22 = (1.0/(m-1))*numpy.dot(H2bar, H2bar.T)
+        SigmaHat22 = SigmaHat22 + 0.0001*numpy.identity(SigmaHat22.shape[0], dtype=numpy.float32)
+
+        Tval = numpy.dot(mat_pow(SigmaHat11), numpy.dot(SigmaHat12, mat_pow(SigmaHat22)))
+        
+        corr =  numpy.trace(numpy.dot(Tval.T, Tval))**(0.5)
 def test_dcca_old(learning_rate=0.01, L1_reg=0.0001, L2_reg=0.0001, n_epochs=1000,
              dataset='mnist.pkl.gz', batch_size=20, n_hidden=500):
     """
@@ -713,17 +733,17 @@ def test_dcca(learning_rate=0.01, L1_reg=0.0001, L2_reg=0.0001, n_epochs=1000,
         n_hidden=20,
         n_out=8
     )
- 
-    cost1 = (
-        net1.correlation(h2)
-        + L1_reg * net1.L1
-        + L2_reg * net1.L2_sqr
-    )
-    cost2 = (
-        net2.correlation(h1)
-        + L1_reg * net2.L1
-        + L2_reg * net2.L2_sqr
-    )
+    if 1:
+        cost1 = (
+            net1.correlation(h1, h2)
+            + L1_reg * net1.L1
+            + L2_reg * net1.L2_sqr
+        )
+        cost2 = (
+            net2.correlation(h1, h2)
+            + L1_reg * net2.L1
+            + L2_reg * net2.L2_sqr
+        )
    
     """
     test_model = theano.function(
@@ -833,26 +853,31 @@ def test_dcca(learning_rate=0.01, L1_reg=0.0001, L2_reg=0.0001, n_epochs=1000,
         h2hidden = h2hidden.T
         h1tmpval = h1tmpval.T
         h2tmpval = h2tmpval.T
-
         if 1: # compute cost(H1, H2)
+            
             H1 = h1tmpval
             H2 = h2tmpval
-            H1bar = H1 -(1.0/8.0)*numpy.dot(H1, numpy.ones((H1.shape[1],H1.shape[1]), dtype=numpy.float32))
-            H2bar = H2 -(1.0/8.0)*numpy.dot(H2, numpy.ones((H1.shape[1],H1.shape[1]), dtype=numpy.float32))
-            SigmaHat12 = (1.0/(8-1))*numpy.dot(H1bar, H2bar.T)
-            SigmaHat11 = (1.0/(8-1))*numpy.dot(H1bar, H1bar.T)
+            m = H1.shape[1]
+
+            H1bar = H1 - (1.0/m)*numpy.dot(H1, numpy.ones((m,m), dtype=numpy.float32))
+            H2bar = H2 - (1.0/m)*numpy.dot(H2, numpy.ones((m,m), dtype=numpy.float32))
+            SigmaHat12 = (1.0/(m-1))*numpy.dot(H1bar, H2bar.T)
+            SigmaHat11 = (1.0/(m-1))*numpy.dot(H1bar, H1bar.T)
             SigmaHat11 = SigmaHat11 + 0.0001*numpy.identity(SigmaHat11.shape[0], dtype=numpy.float32)
-            SigmaHat22 = (1.0/(8-1))*numpy.dot(H2bar, H2bar.T)
+            SigmaHat22 = (1.0/(m-1))*numpy.dot(H2bar, H2bar.T)
             SigmaHat22 = SigmaHat22 + 0.0001*numpy.identity(SigmaHat22.shape[0], dtype=numpy.float32)
-            Tval = numpy.dot(SigmaHat11**(-0.5), numpy.dot(SigmaHat12, SigmaHat22**(-0.5)))
-            corr = numpy.trace(numpy.dot(Tval.T, Tval))**(0.5)
+
+            Tval = numpy.dot(mat_pow(SigmaHat11), numpy.dot(SigmaHat12, mat_pow(SigmaHat22)))
+            
+            corr =  numpy.trace(numpy.dot(Tval.T, Tval))**(0.5)
         if 1: # compute gradient dcost(H1,H2)/dH1
+            
             U, D, V, = numpy.linalg.svd(Tval)
             UVT = numpy.dot(U, V.T)
-            Delta12 = numpy.dot(SigmaHat11**(-0.5), numpy.dot(UVT, SigmaHat22**(-0.5)))
+            Delta12 = numpy.dot(mat_pow(SigmaHat11), numpy.dot(UVT, mat_pow(SigmaHat22)))
             UDUT = numpy.dot(U, numpy.dot(D, U.T))
-            Delta11 = (-0.5) * numpy.dot(SigmaHat11**(-0.5), numpy.dot(UDUT, SigmaHat22**(-0.5)))
-            grad_E_to_o = (1.0/8) * (2*numpy.dot(Delta11,H1bar)+numpy.dot(Delta12,H2bar))
+            Delta11 = (-0.5) * numpy.dot(mat_pow(SigmaHat11), numpy.dot(UDUT, mat_pow(SigmaHat22)))
+            grad_E_to_o = (1.0/m) * (2*numpy.dot(Delta11,H1bar)+numpy.dot(Delta12,H2bar))
             ##gparam1_W = (grad_E_to_o) * (h1tmpval*(1-h1tmpval)) * (h1hidden)
             gparam1_W = numpy.dot((h1hidden), ((grad_E_to_o) * (h1tmpval*(1-h1tmpval))).T)
             ##gparam1_b = (grad_E_to_o) * (h1tmpval*(1-h1tmpval)) * theano.shared(numpy.array([1.0],dtype=theano.config.floatX), borrow=True)
@@ -869,13 +894,13 @@ def test_dcca(learning_rate=0.01, L1_reg=0.0001, L2_reg=0.0001, n_epochs=1000,
             ]
             #gparams1.append(gparam1_b)
         if 1: # compute gradient dcost(H1,H2)/dH2
-            Tval2 = numpy.dot(SigmaHat22**(-0.5), numpy.dot(SigmaHat12.T, SigmaHat11**(-0.5)))
+            Tval2 = numpy.dot(mat_pow(SigmaHat22), numpy.dot(SigmaHat12.T, mat_pow(SigmaHat11)))
             U, D, V, = numpy.linalg.svd(Tval2)
             UVT = numpy.dot(U, V.T)
-            Delta12 = numpy.dot(SigmaHat22**(-0.5), numpy.dot(UVT, SigmaHat11**(-0.5)))
+            Delta12 = numpy.dot(mat_pow(SigmaHat22), numpy.dot(UVT, mat_pow(SigmaHat11)))
             UDUT = numpy.dot(U, numpy.dot(D, U.T))
-            Delta11 = (-0.5) * numpy.dot(SigmaHat22**(-0.5), numpy.dot(UDUT, SigmaHat11**(-0.5)))
-            grad_E_to_o = (1.0/8) * (2*numpy.dot(Delta11,H2bar)+numpy.dot(Delta12,H1bar))
+            Delta11 = (-0.5) * numpy.dot(mat_pow(SigmaHat22), numpy.dot(UDUT, mat_pow(SigmaHat11)))
+            grad_E_to_o = (1.0/m) * (2*numpy.dot(Delta11,H2bar)+numpy.dot(Delta12,H1bar))
             ##gparam1_W = (grad_E_to_o) * (h1tmpval*(1-h1tmpval)) * (h1hidden)
             gparam2_W = numpy.dot((h2hidden), ((grad_E_to_o) * (h2tmpval*(1-h2tmpval))).T)
             ##gparam1_b = (grad_E_to_o) * (h1tmpval*(1-h1tmpval)) * theano.shared(numpy.array([1.0],dtype=theano.config.floatX), borrow=True)
@@ -894,38 +919,41 @@ def test_dcca(learning_rate=0.01, L1_reg=0.0001, L2_reg=0.0001, n_epochs=1000,
         
         #X_theano = theano.shared(value=X, name='inputs')
         #h1tmp = theano.shared( value=h1tmpval, name='hidden1_rep', dtype=theano.config.floatX , borrow=True)
-        h1tmp = theano.shared(numpy.asarray(h1tmpval,dtype=theano.config.floatX),
+        h1tmp = theano.shared(numpy.asarray(H1bar,dtype=theano.config.floatX),
                                  borrow=True)
         #h2tmp = theano.shared( value=h2tmpval, name='hidden2_rep', dtype=theano.config.floatX , borrow=True)
-        h2tmp = theano.shared(numpy.asarray(h2tmpval,dtype=theano.config.floatX),
+        h2tmp = theano.shared(numpy.asarray(H2bar,dtype=theano.config.floatX),
                                  borrow=True)
         #h1tmp = T.shared( value=net1.output.eval(), name='hidden1_rep' )
         #h2tmp = T.shared( net2.output.eval() )
 
         train_model1 = theano.function(
             inputs=[],
-            outputs=cost1,
+            #outputs=cost1,
             updates=updates1,
             givens={
-                x1: test_set_x,
+                #x1: test_set_x,
+                h1: h1tmp,
                 h2: h2tmp
             }
         )
         train_model2 = theano.function(
             inputs=[],
-            outputs=cost2,
+            #outputs=cost2,
             updates=updates2,
             givens={
-                x2: test_set_y,
+                #x2: test_set_y,
                 h1: h1tmp,
+                h2: h2tmp
+
             }
         )
-       
+        
         minibatch_avg_cost1 = train_model1()
         minibatch_avg_cost2 = train_model2()
-        print 'corr1', minibatch_avg_cost1
-        print 'corr2', minibatch_avg_cost2
-
+        #print 'corr1', minibatch_avg_cost1
+        #print 'corr2', minibatch_avg_cost2
+        print 'corr', corr
         if epoch > 10:
             break
 
