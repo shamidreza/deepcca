@@ -564,9 +564,9 @@ class SdA_regress(object):
 
 
     
-def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=10,
-             pretrain_lr=0.005, training_epochs=100000,
-             dataset='mnist.pkl.gz', batch_size=20):
+def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=15,
+             pretrain_lr=0.005, training_epochs=1000,
+             dataset='mnist.pkl.gz', batch_size=5):
     """
     Demonstrates how to train and test a stochastic denoising autoencoder.
 
@@ -770,7 +770,14 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=10,
 
     done_looping = False
     epoch = 0
-
+    fprop = theano.function(
+        [],
+        sda.sigmoid_layers[-1].output,
+        givens={
+            sda.x: test_set_x
+        },
+        name='fprop'
+    )
     while (epoch < training_epochs) and (not done_looping):
         epoch = epoch + 1
         for minibatch_index in xrange(n_train_batches):
@@ -809,7 +816,7 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=10,
             if patience <= iter:
                 done_looping = True
                 break
-            if 1: # vis weights
+            if 0: # vis weights
                 fprop = theano.function(
                     [],
                     sda.sigmoid_layers[-1].output,
