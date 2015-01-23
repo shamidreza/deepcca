@@ -5,8 +5,10 @@ def mat_pow(matrix):
     return scipy.linalg.sqrtm(np.linalg.inv(matrix))
     #return matrix ** -0.5        
 from mlp_numpy import *
-from SdA_mapping import load_data_half
+from SdA_mapping import load_data_half, plot_weights
 
+def cca_cost(H1, H2):
+    return (cca(H1, H2)+cca(H2, H1))/(cca(H1, H1)+cca(H2, H2))
 def cca(H1, H2):
     H1 = H1.T
     H2 = H2.T
@@ -167,7 +169,7 @@ class netCCA_old(object):
     
 
 class netCCA(object):
-    def __init__(self, X, parameters):
+    def __init__(self, X, parameters,Ws=None, bs=None):
         #Input data
         self.X=X
         
@@ -181,8 +183,36 @@ class netCCA(object):
         self.fs =[layer[1] for layer in parameters]
         #Derivatives of activation functions for each layer.
         self.fprimes = [layer[2] for layer in parameters]
-        self.build_network()
+        if Ws is None or bs is None:
+            self.build_network()
+        else:
+            self.import_weights(Ws, bs)
  
+    def import_weights(self, Ws, bs):
+        #List of weight matrices taking the output of one layer to the input of the next.
+        self.weights=[]
+        #Bias vector for each layer.
+        self.biases=[]
+        #Input vector for each layer.
+        self.inputs=[]
+        #Output vector for each layer.
+        self.outputs=[]
+        #Vector of errors at each layer.
+        self.errors=[]
+        #We initialise the weights randomly, and fill the other vectors with 1s.
+        for layer in range(self.n_layers-1):
+            n = self.sizes[layer]
+            m = self.sizes[layer+1]
+            self.weights.append(Ws[layer])
+            self.biases.append(bs[layer])
+            self.inputs.append(np.zeros((n,1)))
+            self.outputs.append(np.zeros((n,1)))
+            self.errors.append(np.zeros((n,1)))
+        #There are only n-1 weight matrices, so we do the last case separately.
+        n = self.sizes[-1]
+        self.inputs.append(np.zeros((n,1)))
+        self.outputs.append(np.zeros((n,1)))
+        self.errors.append(np.zeros((n,1)))
     def build_network(self):
         #List of weight matrices taking the output of one layer to the input of the next.
         self.weights=[]
@@ -282,7 +312,7 @@ class dCCA(object):
         self.learning_rate=learning_rate
         H1 = self.netCCA1.predict(self.X1)
         H2 = self.netCCA2.predict(self.X2)
-        print '0', cca(H1, H2)
+        print '0', cca_cost(H1, H2)
         for repeat in range(n_iter):
             #We shuffle the order in which we go through the inputs on each iter.
             #index=list(range(n))
@@ -292,11 +322,19 @@ class dCCA(object):
             #y=self.y[row]
             #H1 = self.netCCA1.predict(self.X1)
             #H2 = self.netCCA2.predict(self.X2)
-            self.netCCA1.update_weights_batch(self.X1, H1, H2, self.learning_rate)
-            self.netCCA2.update_weights_batch(self.X2, H2, H1, self.learning_rate)
-            H1 = self.netCCA1.predict(self.X1)
-            H2 = self.netCCA2.predict(self.X2)
-            print repeat+1, cca(H1, H2)
+            st = 0
+            en = min(5000, self.X1.shape[0])
+            while True:
+                self.netCCA1.update_weights_batch(self.X1[st:en,:], H1[st:en,:], H2[st:en,:], self.learning_rate)
+                self.netCCA2.update_weights_batch(self.X2[st:en,:], H2[st:en,:], H1[st:en,:], self.learning_rate)
+                if en >= self.X1.shape[0]:
+                    break
+                st += 5000
+                en = min(en+5000, self.X1.shape[0])
+                
+                H1 = self.netCCA1.predict(self.X1)
+                H2 = self.netCCA2.predict(self.X2)
+                print repeat+1, cca_cost(H1, H2)
 
 #expit is a fast way to compute logistic using precomputed exp.
 from scipy.special import expit
@@ -364,7 +402,7 @@ def test_regression(plots=False):
             ax.plot(X,data[1],label="Learning Rate: "+str(data[0]))
         ax.legend()
     plt.show()
-def plot_weights(w):
+def plot_weights2(w):
     import matplotlib.pyplot as pp
     #ax=pp.subplot(211)
     #pp.imshow(w[0,:].reshape((28,28)),interpolation='none',aspect='auto')
@@ -445,4 +483,5 @@ def load_data(dataset='mnist.pkl.gz'):
 
 
 
-test_regression(True)
+if __name__ == '__main__':
+    test_regression(True)

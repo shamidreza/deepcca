@@ -564,7 +564,7 @@ class SdA_regress(object):
 
 
     
-def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=15,
+def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=25,
              pretrain_lr=0.005, training_epochs=1000,
              dataset='mnist.pkl.gz', batch_size=5):
     """
@@ -592,9 +592,9 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=15,
 
     datasets = load_data_half(dataset)
 
-    train_set_x, train_set_y = datasets[0]
-    valid_set_x, valid_set_y = datasets[1]
-    test_set_x, test_set_y = datasets[2]
+    train_set_x, train_set_y = datasets[0]##
+    valid_set_x, valid_set_y = datasets[1]##
+    test_set_x, test_set_y = datasets[2]##
 
     # compute number of minibatches for training, validation and testing
     n_train_batches = train_set_x.get_value(borrow=True).shape[0]
@@ -607,16 +607,16 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=15,
     # construct the stacked denoising autoencoder class
     SdA_inp = SdA(numpy_rng,
                   n_ins=28*28//2,
-                  hidden_layers_sizes=[500, 500]
+                  hidden_layers_sizes=[2038, 50]
     )
     SdA_out = SdA(numpy_rng,
                   n_ins=28*28//2,
-                  hidden_layers_sizes=[500, 500]
+                  hidden_layers_sizes=[1608, 50]
     )
         
     # PRETRAINING THE MODEL #
     #########################
-    if 1 : # pretrain inp ae
+    if 0 : # pretrain inp ae
         print '... getting the pretraining functions for INPUT AE'
         pretraining_fns = SdA_inp.pretraining_functions(train_set_x=train_set_x,
                                                     batch_size=batch_size)
@@ -642,7 +642,7 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=15,
         print >> sys.stderr, ('The pretraining code for file ' +
                               os.path.split(__file__)[1] +
                               ' ran for %.2fm' % ((end_time - start_time) / 60.))
-    if 1 : # pretrain out ae
+    if 0 : # pretrain out ae
         print '... getting the pretraining functions for OUTPUT AE'
         pretraining_fns = SdA_out.pretraining_functions(train_set_x=train_set_y,
                                                     batch_size=batch_size)
@@ -670,6 +670,46 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=15,
                               ' ran for %.2fm' % ((end_time - start_time) / 60.))
     
         
+    if 0: # save aes
+        f=open('aes.pkl', 'w+')
+        import pickle
+        pickle.dump(SdA_inp, f)
+        pickle.dump(SdA_out, f)
+        f.flush()
+        f.close() 
+    if 1: # load aes
+        f=open('aes.pkl', 'r')
+        import pickle
+        SdA_inp=pickle.load(f)
+        SdA_out=pickle.load(f)
+        f.close()    
+   
+    if 1: # cca
+        from dcca_numpy import netCCA, dCCA, expit, logistic_prime
+        train_y1 = train_set_x.eval()
+        train_y2 = train_set_y.eval()
+        test_y1 = test_set_x.eval()
+        test_y2 = test_set_y.eval()
+        param1=((train_y1.shape[1],0,0),(2038, expit, logistic_prime),(50, expit, logistic_prime))
+        param2=((train_y2.shape[1],0,0),(1608, expit, logistic_prime),(50, expit, logistic_prime))
+        W1s = []
+        b1s = []
+        for i in range(len(SdA_inp.dA_layers)):
+            W1s.append( SdA_inp.dA_layers[i].W.T.eval() )
+            b1s.append( SdA_inp.dA_layers[i].b.eval() )
+            b1s[-1] = b1s[-1].reshape((b1s[-1].shape[0], 1))
+        W2s = []
+        b2s = []
+        for i in range(len(SdA_out.dA_layers)):
+            W2s.append( SdA_out.dA_layers[i].W.T.eval() )
+            b2s.append( SdA_out.dA_layers[i].b.eval() )
+            b2s[-1] = b2s[-1].reshape((b2s[-1].shape[0], 1))
+
+
+        N1=netCCA(train_y1,param1, W1s, b1s)
+        N2=netCCA(train_y2,param2, W2s, b2s)
+        N = dCCA(train_y1, train_y2, N1, N2)
+        N.train(1, 0.05)
     if 1 : # pretrain middle layer
         print '... pre-training MIDDLE layer'
 
