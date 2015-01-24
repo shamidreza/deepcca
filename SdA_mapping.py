@@ -39,10 +39,9 @@ import theano
 import theano.tensor as T
 from theano.tensor.shared_randomstreams import RandomStreams
 
-from logistic_sgd import LogisticRegression, load_data
 from mlp import HiddenLayer
 from dA import dA
-import matplotlib.pyplot as pp   
+#import matplotlib.pyplot as pp   
 
 
 # start-snippet-1
@@ -565,7 +564,7 @@ class SdA_regress(object):
 
     
 def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=25,
-             pretrain_lr=0.005, training_epochs=1000,
+             pretrain_lr=0.01, training_epochs=1000,
              dataset='mnist.pkl.gz', batch_size=5):
     """
     Demonstrates how to train and test a stochastic denoising autoencoder.
@@ -690,6 +689,7 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=25,
         train_y2 = train_set_y.eval()
         test_y1 = test_set_x.eval()
         test_y2 = test_set_y.eval()
+
         param1=((train_y1.shape[1],0,0),(2038, expit, logistic_prime),(50, expit, logistic_prime))
         param2=((train_y2.shape[1],0,0),(1608, expit, logistic_prime),(50, expit, logistic_prime))
         W1s = []
@@ -705,17 +705,33 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=25,
             b2s.append( SdA_out.dA_layers[i].b.eval() )
             b2s[-1] = b2s[-1].reshape((b2s[-1].shape[0], 1))
 
-
+        #W1s[0] = numpy.random.random(W1s[0].shape).astype(numpy.float32)
         N1=netCCA(train_y1,param1, W1s, b1s)
         N2=netCCA(train_y2,param2, W2s, b2s)
         N = dCCA(train_y1, train_y2, N1, N2)
-        N.train(1, 0.05)
+        cnt = 0
+        from dcca_numpy import cca_cost
+        while True:
+            N.train(1, 0.0001)
+            cnt += 1
+            print '****', cnt, cca_cost(N1.predict(test_set_x.eval()), N2.predict(test_set_y.eval()))
+            if cnt == 2:
+                break
+        for i in range(len(SdA_inp.dA_layers)):
+            SdA_inp.dA_layers[i].W = theano.shared( N1.weights[i].T )
+            SdA_inp.dA_layers[i].b = theano.shared( N1.biases[i][:,0] )
+        
+        for i in range(len(SdA_out.dA_layers)):
+            SdA_out.dA_layers[i].W = theano.shared( N2.weights[i].T )
+            SdA_out.dA_layers[i].b = theano.shared( N2.weights[i][:,0] )
+
+        
     if 1 : # pretrain middle layer
         print '... pre-training MIDDLE layer'
 
         h1 = T.matrix('x')  # the data is presented as rasterized images
         h2 = T.matrix('y')  # the labels are presented as 1D vector of
-        log_reg = HiddenLayer(numpy_rng, h1, 500, 500)
+        log_reg = HiddenLayer(numpy_rng, h1, 50, 50)
 
         if 1: # for middle layer
             learning_rate = 0.01
@@ -723,7 +739,7 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=25,
                 [],
                 SdA_inp.sigmoid_layers[-1].output,
                 givens={
-                    SdA_inp.sigmoid_layers[0].input: test_set_x
+                    SdA_inp.sigmoid_layers[0].input: train_set_x
                 },
                 name='fprop_inp'
             )
@@ -731,12 +747,15 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=25,
                 [],
                 SdA_out.sigmoid_layers[-1].output,
                 givens={
-                    SdA_out.sigmoid_layers[0].input: test_set_y
+                    SdA_out.sigmoid_layers[0].input: train_set_y
                 },
                 name='fprop_out'
             )
-            H1=fprop_out() 
-            H2=fprop_out()
+            H11=fprop_inp() 
+            H21=fprop_out()
+            H1=N1.predict(train_set_x.eval())
+            H2=N2.predict(train_set_y.eval())
+
             H1=theano.shared(H1)
             H2=theano.shared(H2)
             # compute the gradients with respect to the model parameters

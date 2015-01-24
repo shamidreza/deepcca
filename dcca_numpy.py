@@ -205,14 +205,14 @@ class netCCA(object):
             m = self.sizes[layer+1]
             self.weights.append(Ws[layer])
             self.biases.append(bs[layer])
-            self.inputs.append(np.zeros((n,1)))
-            self.outputs.append(np.zeros((n,1)))
-            self.errors.append(np.zeros((n,1)))
+            self.inputs.append(np.zeros((n,1),dtype=np.float32))
+            self.outputs.append(np.zeros((n,1),dtype=np.float32))
+            self.errors.append(np.zeros((n,1),dtype=np.float32))
         #There are only n-1 weight matrices, so we do the last case separately.
         n = self.sizes[-1]
-        self.inputs.append(np.zeros((n,1)))
-        self.outputs.append(np.zeros((n,1)))
-        self.errors.append(np.zeros((n,1)))
+        self.inputs.append(np.zeros((n,1),dtype=np.float32))
+        self.outputs.append(np.zeros((n,1),dtype=np.float32))
+        self.errors.append(np.zeros((n,1),dtype=np.float32))
     def build_network(self):
         #List of weight matrices taking the output of one layer to the input of the next.
         self.weights=[]
@@ -290,7 +290,7 @@ class netCCA(object):
     def predict(self, X):
         n = len(X)
         m = self.sizes[-1]
-        ret = np.ones((n,m))
+        ret = np.ones((n,m),dtype=np.float32)
         for i in range(len(X)):
             ret[i,:] = self.feedforward(X[i])[:,0]
         return ret
