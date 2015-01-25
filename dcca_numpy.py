@@ -6,7 +6,11 @@ def mat_pow(matrix):
     #return matrix ** -0.5        
 from mlp_numpy import *
 from SdA_mapping import load_data_half, plot_weights
-
+def cor_cost(H1,H2):
+    cor=0.0
+    for i in range(H1.shape[1]):
+        cor += np.corrcoef(H1[:,i], H2[:,i])[0,1]
+    return cor
 def cca_cost(H1, H2):
     return (cca(H1, H2)+cca(H2, H1))/(cca(H1, H1)+cca(H2, H2))
 def cca(H1, H2):

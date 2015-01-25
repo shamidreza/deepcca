@@ -253,8 +253,10 @@ class dA_joint(object):
         self.params = [self.W1, self.b1, self.b1_prime,
                        self.W2, self.b2, self.b2_prime
         ]
-    # end-snippet-1
-
+        # end-snippet-1
+        self.output1 = T.nnet.sigmoid(T.dot(self.x1, self.W1) + self.b1)
+        self.output2 = T.nnet.sigmoid(T.dot(self.x2, self.W2) + self.b2)
+        #self.regress
     def get_corrupted_input(self, input1, input2, corruption_level):
         """This function keeps ``1-corruption_level`` entries of the inputs the
         same and zero-out randomly selected subset of size ``coruption_level``
@@ -313,9 +315,10 @@ class dA_joint(object):
         #        example in minibatch
         L_x1 = - T.sum(self.x1 * T.log(z1) + (1 - self.x1) * T.log(1 - z1), axis=1)
         L_x2 = - T.sum(self.x2 * T.log(z2) + (1 - self.x2) * T.log(1 - z2), axis=1)
-        L_X1_x2 = - T.sum(y1 * T.log(y2) + (1 - y1) * T.log(1 - y2), axis=1)
- 
-        cost = T.mean(L_x1) + T.mean(L_x2) + T.mean(L_X1_x2)
+        #L_X1_x2 = - T.sum(y1 * T.log(y2) + (1 - y1) * T.log(1 - y2), axis=1)
+        #L_X2_x1 = - T.sum(y2 * T.log(y1) + (1 - y2) * T.log(1 - y1), axis=1)
+        L_X1_x2 = T.sum(T.mean((y1-y2)**2,1))
+        cost = T.mean(L_x1) + T.mean(L_x2) + 40.0*T.mean(L_X1_x2)# + 0.2*T.mean(L_X2_x1)
 
         # compute the gradients of the cost of the `dA` with respect
         # to its parameters
@@ -551,9 +554,9 @@ class dA(object):
 
 
 
-def test_dA(learning_rate=0.1, training_epochs=15,
+def test_dA(learning_rate=0.1, training_epochs=150,
             dataset='mnist.pkl.gz',
-            batch_size=20, output_folder='dA_plots'):
+            batch_size=5, output_folder='dA_plots'):
 
     """
     This demo is tested on MNIST
@@ -574,6 +577,7 @@ def test_dA(learning_rate=0.1, training_epochs=15,
     datasets = load_data_half(dataset)
 
     train_set_x, train_set_y = datasets[0]
+    test_set_x, test_set_y = datasets[2]
 
     # compute number of minibatches for training, validation and testing
     n_train_batches = train_set_x.get_value(borrow=True).shape[0] / batch_size
@@ -613,7 +617,7 @@ def test_dA(learning_rate=0.1, training_epochs=15,
         n_visible1=28 * 28/2,
         n_visible2=28 * 28/2,
 
-        n_hidden=500
+        n_hidden=50
     )
 
     cost, updates = da.get_cost_updates(
@@ -631,13 +635,29 @@ def test_dA(learning_rate=0.1, training_epochs=15,
 
         }
     )
-
+    fprop_x1 = theano.function(
+               [],
+               outputs=da.output1,
+               givens={
+                   x1: test_set_x
+               },
+               name='fprop_x1'
+    )
+    fprop_x2 = theano.function(
+               [],
+               outputs=da.output2,
+               givens={
+                   x2: test_set_y
+               },
+               name='fprop_x2'
+    )
+    
     start_time = time.clock()
 
     ############
     # TRAINING #
     ############
-
+    from dcca_numpy import cor_cost
     # go through training epochs
     for epoch in xrange(training_epochs):
         # go through trainng set
@@ -646,7 +666,9 @@ def test_dA(learning_rate=0.1, training_epochs=15,
             c.append(train_da(batch_index))
 
         print 'Training epoch %d, cost ' % epoch, numpy.mean(c)
-
+        H1=fprop_x1()
+        H2=fprop_x2()
+        print 'Training epoch %d, cost ' % epoch, cor_cost(H1, H2)
     end_time = time.clock()
 
     training_time = (end_time - start_time)
@@ -659,7 +681,12 @@ def test_dA(learning_rate=0.1, training_epochs=15,
                            img_shape=(28, 14), tile_shape=(10, 10),
                            tile_spacing=(1, 1)))
     image.save('filters_corruption_0.png')
-
+    
+    from matplotlib import pyplot as pp
+    pp.plot(H1[:10,:2],'b');pp.plot(H2[:10,:2],'r');pp.show()
+    
+    print cor
+        
     #####################################
     # BUILDING THE MODEL CORRUPTION 30% #
     #####################################
