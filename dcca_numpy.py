@@ -3,6 +3,9 @@ import scipy.linalg
 
 def mat_pow(matrix):
     return scipy.linalg.sqrtm(np.linalg.inv(matrix))
+def mat_pow2(matrix):
+    return np.linalg.inv(scipy.linalg.sqrtm(matrix))
+
     #return matrix ** -0.5        
 from mlp_numpy import *
 from SdA_mapping import load_data_half, plot_weights
@@ -10,6 +13,8 @@ def cor_cost(H1,H2):
     cor=0.0
     for i in range(H1.shape[1]):
         cor += np.corrcoef(H1[:,i], H2[:,i])[0,1]
+        #if np.corrcoef(H1[:,i], H2[:,i])[0,1] < 0:
+        #    print 'negative'
     return cor
 def cca_cost(H1, H2):
     return (cca(H1, H2)+cca(H2, H1))/(cca(H1, H1)+cca(H2, H2))
@@ -33,7 +38,7 @@ def cca(H1, H2):
 
     Tval = np.dot(mat_pow(SigmaHat11), np.dot(SigmaHat12, mat_pow(SigmaHat22)))
     
-    corr =  np.trace(np.dot(Tval.T, Tval))**(0.5)
+    corr =  np.trace(np.dot(Tval.T, Tval))##**(0.5)
     return np.real(corr)
 
 def cca_prime(H1, H2):
@@ -197,6 +202,9 @@ class netCCA(object):
         self.weights=[]
         #Bias vector for each layer.
         self.biases=[]
+        self.weights_batch=[]
+        #Bias vector for each layer.
+        self.biases_batch=[]
         #Input vector for each layer.
         self.inputs=[]
         #Output vector for each layer.
@@ -209,6 +217,8 @@ class netCCA(object):
             m = self.sizes[layer+1]
             self.weights.append(Ws[layer])
             self.biases.append(bs[layer])
+            self.weights_batch.append(np.random.normal(0,1, (m,n)))
+            self.biases_batch.append(np.random.normal(0,1,(m,1)))
             self.inputs.append(np.zeros((n,1),dtype=np.float32))
             self.outputs.append(np.zeros((n,1),dtype=np.float32))
             self.errors.append(np.zeros((n,1),dtype=np.float32))
@@ -222,6 +232,9 @@ class netCCA(object):
         self.weights=[]
         #Bias vector for each layer.
         self.biases=[]
+        self.weights_batch=[]
+        #Bias vector for each layer.
+        self.biases_batch=[]
         #Input vector for each layer.
         self.inputs=[]
         #Output vector for each layer.
@@ -234,6 +247,8 @@ class netCCA(object):
             m = self.sizes[layer+1]
             self.weights.append(np.random.normal(0,1, (m,n)))
             self.biases.append(np.random.normal(0,1,(m,1)))
+            self.weights_batch.append(np.random.normal(0,1, (m,n)))
+            self.biases_batch.append(np.random.normal(0,1,(m,1)))
             self.inputs.append(np.zeros((n,1)))
             self.outputs.append(np.zeros((n,1)))
             self.errors.append(np.zeros((n,1)))
@@ -258,11 +273,19 @@ class netCCA(object):
         self.learning_rate=learning_rate
         delta=cca_prime(H1, H2)
         output = self.predict(X)
+        self._zero_weights()
         for i in range(X.shape[0]):
-            self.update_weights(X[i,:], delta[i:i+1,:])
-
- 
-    def update_weights(self,x, delta):
+            self._compute_weights_batchmode(X[i,:], delta[i:i+1,:])
+        self._update_weights()
+    def _zero_weights(self):
+        for i in range(len(self.weights)):
+            self.weights_batch[i][:,:] = 0.0
+            self.biases_batch[i][:] = 0.0
+    def _update_weights(self):
+        for i in range(len(self.weights)):
+            self.weights[i] = self.weights[i]-self.learning_rate*self.weights_batch[i]
+            self.biases[i] = self.biases[i]-self.learning_rate*self.biases_batch[i]
+    def update_weights_online(self,x, delta):
         #Update the weight matrices for each layer based on a single input x and target y.
         output = self.feedforward(x)
         self.errors[-1]=self.fprimes[-1](self.outputs[-1])*(delta.T)
@@ -274,6 +297,18 @@ class netCCA(object):
             self.biases[i] = self.biases[i] - self.learning_rate*self.errors[i+1]
         self.weights[0] = self.weights[0]-self.learning_rate*np.outer(self.errors[1],self.outputs[0])
         self.biases[0] = self.biases[0] - self.learning_rate*self.errors[1] 
+    def _compute_weights_batchmode(self,x, delta):
+        #Update the weight matrices for each layer based on a single input x and target y.
+        output = self.feedforward(x)
+        self.errors[-1]=self.fprimes[-1](self.outputs[-1])*(delta.T)
+ 
+        n=self.n_layers-2
+        for i in xrange(n,0,-1):
+            self.errors[i] = self.fprimes[i](self.inputs[i])*self.weights[i].T.dot(self.errors[i+1])
+            self.weights_batch[i] += np.outer(self.errors[i+1],self.outputs[i])
+            self.biases_batch[i] += self.errors[i+1]
+        self.weights_batch[0] += np.outer(self.errors[1],self.outputs[0])
+        self.biases_batch[0] += self.errors[1] 
     def train(self,n_iter, learning_rate=1):
         #Updates the weights after comparing each input in X with y
         #repeats this process n_iter times.
@@ -338,7 +373,7 @@ class dCCA(object):
                 
                 H1 = self.netCCA1.predict(self.X1)
                 H2 = self.netCCA2.predict(self.X2)
-                print repeat+1, cca_cost(H1, H2)
+                print repeat+1, cca(H1, H2)
 
 #expit is a fast way to compute logistic using precomputed exp.
 from scipy.special import expit
@@ -382,7 +417,7 @@ def test_regression(plots=False):
     #plot_weights(net.weights[0])
     #out=net.predict(test_set_x)
     #Set learning rate.
-    rates=[0.1]
+    rates=[0.001]
     predictions=[]
     for rate in rates:
         N.train(10, learning_rate=rate)
@@ -405,7 +440,7 @@ def test_regression(plots=False):
         for data in predictions:
             ax.plot(X,data[1],label="Learning Rate: "+str(data[0]))
         ax.legend()
-    plt.show()
+    #plt.show()
 def plot_weights2(w):
     import matplotlib.pyplot as pp
     #ax=pp.subplot(211)
