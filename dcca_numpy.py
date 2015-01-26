@@ -1,6 +1,10 @@
 import numpy as np
 import scipy.linalg
-
+try:
+    from matplotlib import pyplot as pp
+except ImportError:
+    print 'matplotlib is could not be imported'
+    
 def mat_pow(matrix):
     return scipy.linalg.sqrtm(np.linalg.inv(matrix))
 def mat_pow2(matrix):
@@ -12,7 +16,7 @@ from SdA_mapping import load_data_half, plot_weights
 def cor_cost(H1,H2):
     cor=0.0
     for i in range(H1.shape[1]):
-        cor += np.corrcoef(H1[:,i], H2[:,i])[0,1]
+        cor += abs(np.corrcoef(H1[:,i], H2[:,i])[0,1])
         #if np.corrcoef(H1[:,i], H2[:,i])[0,1] < 0:
         #    print 'negative'
     return cor
@@ -35,11 +39,13 @@ def cca(H1, H2):
     SigmaHat11 = SigmaHat11 + 0.0001*np.identity(SigmaHat11.shape[0], dtype=np.float32)
     SigmaHat22 = (1.0/(m-1))*np.dot(H2bar, H2bar.T)
     SigmaHat22 = SigmaHat22 + 0.0001*np.identity(SigmaHat22.shape[0], dtype=np.float32)
+    SigmaHat11_2=mat_pow(SigmaHat11).real.astype(np.float32)
+    SigmaHat22_2=mat_pow(SigmaHat22).real.astype(np.float32)
+    Tval = np.dot(SigmaHat11_2, np.dot(SigmaHat12, SigmaHat22_2))
+    U, D, V, = np.linalg.svd(Tval)
 
-    Tval = np.dot(mat_pow(SigmaHat11), np.dot(SigmaHat12, mat_pow(SigmaHat22)))
-    
-    corr =  np.trace(np.dot(Tval.T, Tval))##**(0.5)
-    return np.real(corr)
+    corr =  np.trace(np.dot(Tval.T, Tval))#**(0.5)
+    return corr
 
 def cca_prime(H1, H2):
     H1 = H1.T
@@ -59,14 +65,17 @@ def cca_prime(H1, H2):
     SigmaHat11 = SigmaHat11 + 0.0001*np.identity(SigmaHat11.shape[0], dtype=np.float32)
     SigmaHat22 = (1.0/(m-1))*np.dot(H2bar, H2bar.T)
     SigmaHat22 = SigmaHat22 + 0.0001*np.identity(SigmaHat22.shape[0], dtype=np.float32)
-
-    Tval = np.dot(mat_pow(SigmaHat11), np.dot(SigmaHat12, mat_pow(SigmaHat22)))
+    SigmaHat11_2=mat_pow(SigmaHat11).real.astype(np.float32)
+    SigmaHat12_2=mat_pow(SigmaHat12).real.astype(np.float32)
+    SigmaHat22_2=mat_pow(SigmaHat22).real.astype(np.float32)
+    Tval = np.dot(SigmaHat11_2, np.dot(SigmaHat12, SigmaHat22_2))
     
     U, D, V, = np.linalg.svd(Tval)
-    UVT = np.dot(U, V.T)
-    Delta12 = np.dot(mat_pow(SigmaHat11), np.dot(UVT, mat_pow(SigmaHat22)))
+    D=np.diag(D)
+    UVT = np.dot(U, V)
+    Delta12 = np.dot(SigmaHat11_2, np.dot(UVT, SigmaHat22_2))
     UDUT = np.dot(U, np.dot(D, U.T))
-    Delta11 = (-0.5) * np.dot(mat_pow(SigmaHat11), np.dot(UDUT, mat_pow(SigmaHat22)))
+    Delta11 = (-0.5) * np.dot(SigmaHat11_2, np.dot(UDUT, SigmaHat11_2))
     grad_E_to_o = (1.0/m) * (2*np.dot(Delta11,H1bar)+np.dot(Delta12,H2bar))
     ##gparam1_W = (grad_E_to_o) * (h1tmpval*(1-h1tmpval)) * (h1hidden)
     #gparam1_W = -1.0*numpy.dot((h1hidden), ((grad_E_to_o) * (h1tmpval*(1-h1tmpval))).T)
@@ -74,7 +83,7 @@ def cca_prime(H1, H2):
     #gparam1_b = -1.0*numpy.dot(numpy.ones((1,10000),dtype=theano.config.floatX), ((grad_E_to_o) * (h1tmpval*(1-h1tmpval))).T)
     #gparam1_W = theano.shared(gparam1_W, borrow=True)
     #gparam1_b = theano.shared(gparam1_b[0,:], borrow=True)
-    return -1.0*np.real(grad_E_to_o.real).T##np.real(grad_E_to_o.real).T
+    return -1.0*grad_E_to_o.T##np.real(grad_E_to_o.real).T
     
 class netCCA_old(object):
     def __init__(self, X, parameters):
@@ -276,7 +285,7 @@ class netCCA(object):
         self._zero_weights()
         for i in range(X.shape[0]):
             self._compute_weights_batchmode(X[i,:], delta[i:i+1,:])
-        self._update_weights()
+        #self._update_weights()
     def _zero_weights(self):
         for i in range(len(self.weights)):
             self.weights_batch[i][:,:] = 0.0
@@ -351,7 +360,7 @@ class dCCA(object):
         self.learning_rate=learning_rate
         H1 = self.netCCA1.predict(self.X1)
         H2 = self.netCCA2.predict(self.X2)
-        print '0', cca_cost(H1, H2)
+        print '0', cca(H1, H2)
         for repeat in range(n_iter):
             #We shuffle the order in which we go through the inputs on each iter.
             #index=list(range(n))
@@ -366,6 +375,9 @@ class dCCA(object):
             while True:
                 self.netCCA1.update_weights_batch(self.X1[st:en,:], H1[st:en,:], H2[st:en,:], self.learning_rate)
                 self.netCCA2.update_weights_batch(self.X2[st:en,:], H2[st:en,:], H1[st:en,:], self.learning_rate)
+                self.netCCA1._update_weights()
+                self.netCCA2._update_weights()
+
                 if en >= self.X1.shape[0]:
                     break
                 st += 5000
@@ -398,11 +410,15 @@ def test_regression(plots=False):
     y1 = test_set_x
     y2 = test_set_y
     
-
+    A=np.random.random((10000,50))
+    B=np.random.random((10000,50))
+    cca_prime(A, B)
+    cca_prime(A, A)
     #We make a neural net with 2 hidden layers, 20 neurons in each, using logistic activation
     #functions.
     param1=((y1.shape[1],0,0),(2038, expit, logistic_prime),(50, expit, logistic_prime))
     param2=((y2.shape[1],0,0),(1608, expit, logistic_prime),(50, expit, logistic_prime))
+    np.random.seed(0)
     N1=netCCA(y1,param1)
     N2=netCCA(y2,param2)
     N = dCCA(y1, y2, N1, N2)
@@ -417,7 +433,7 @@ def test_regression(plots=False):
     #plot_weights(net.weights[0])
     #out=net.predict(test_set_x)
     #Set learning rate.
-    rates=[0.001]
+    rates=[0.1]
     predictions=[]
     for rate in rates:
         N.train(10, learning_rate=rate)
