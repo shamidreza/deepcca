@@ -314,9 +314,9 @@ class netCCA(object):
         n=self.n_layers-2
         for i in xrange(n,0,-1):
             self.errors[i] = self.fprimes[i](self.inputs[i])*self.weights[i].T.dot(self.errors[i+1])
-            self.weights_batch[i] += np.outer(self.errors[i+1],self.outputs[i])
-            self.biases_batch[i] += self.errors[i+1]
-        self.weights_batch[0] += np.outer(self.errors[1],self.outputs[0])
+            self.weights_batch[i] += (np.outer(self.errors[i+1],self.outputs[i])+0.000001*self.weights[i])
+            self.biases_batch[i] += (self.errors[i+1])
+        self.weights_batch[0] += (np.outer(self.errors[1],self.outputs[0])+0.000001*self.weights[0])
         self.biases_batch[0] += self.errors[1] 
     def train(self,n_iter, learning_rate=1):
         #Updates the weights after comparing each input in X with y
@@ -421,7 +421,7 @@ def test_regression(plots=False):
     np.random.seed(0)
     N1=netCCA(y1,param1)
     N2=netCCA(y2,param2)
-    N = dCCA(y1, y2, N1, N2)
+    N = dCCA(train_set_x, train_set_y, N1, N2)
     if 0:
         net=NeuralNetwork(y1, y1, param1)
         for k in range(1000):
@@ -433,7 +433,7 @@ def test_regression(plots=False):
     #plot_weights(net.weights[0])
     #out=net.predict(test_set_x)
     #Set learning rate.
-    rates=[0.1]
+    rates=[2.0]
     predictions=[]
     for rate in rates:
         N.train(10, learning_rate=rate)
