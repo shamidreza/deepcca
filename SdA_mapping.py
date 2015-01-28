@@ -41,8 +41,10 @@ from theano.tensor.shared_randomstreams import RandomStreams
 
 from mlp import HiddenLayer
 from dA import dA
-#import matplotlib.pyplot as pp   
-
+try:
+    from matplotlib import pyplot as pp
+except ImportError:
+    print 'matplotlib is could not be imported'
 
 # start-snippet-1
 class SdA(object):
@@ -563,32 +565,9 @@ class SdA_regress(object):
 
 
     
-def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=25,
+def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=3,
              pretrain_lr=0.01, training_epochs=1000,
-             dataset='mnist.pkl.gz', batch_size=5):
-    """
-    Demonstrates how to train and test a stochastic denoising autoencoder.
-
-    This is demonstrated on MNIST.
-
-    :type learning_rate: float
-    :param learning_rate: learning rate used in the finetune stage
-    (factor for the stochastic gradient)
-
-    :type pretraining_epochs: int
-    :param pretraining_epochs: number of epoch to do pretraining
-
-    :type pretrain_lr: float
-    :param pretrain_lr: learning rate to be used during pre-training
-
-    :type n_iter: int
-    :param n_iter: maximal number of iterations ot run the optimizer
-
-    :type dataset: string
-    :param dataset: path the the pickled dataset
-
-    """
-
+             dataset='mnist.pkl.gz', batch_size=20):
     datasets = load_data_half(dataset)
 
     train_set_x, train_set_y = datasets[0]##
@@ -605,16 +584,15 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=25,
     print '... building the model'
     # construct the stacked denoising autoencoder class
     SdA_inp = SdA(numpy_rng,
-                  n_ins=28*28//2,
+                  n_ins=392,
                   hidden_layers_sizes=[2038, 50]
     )
     SdA_out = SdA(numpy_rng,
-                  n_ins=28*28//2,
+                  n_ins=392,
                   hidden_layers_sizes=[1608, 50]
     )
         
     # PRETRAINING THE MODEL #
-    #########################
     if 0 : # pretrain inp ae
         print '... getting the pretraining functions for INPUT AE'
         pretraining_fns = SdA_inp.pretraining_functions(train_set_x=train_set_x,
@@ -670,14 +648,14 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=25,
     
         
     if 0: # save aes
-        f=open('aes.pkl', 'w+')
+        f=open('aes_normalized.pkl', 'w+')
         import pickle
         pickle.dump(SdA_inp, f)
         pickle.dump(SdA_out, f)
         f.flush()
         f.close() 
-    if 1: # load aes
-        f=open('aes.pkl', 'r')
+    if 0: # load aes
+        f=open('aes_normalized.pkl', 'r')
         import pickle
         SdA_inp=pickle.load(f)
         SdA_out=pickle.load(f)
@@ -692,6 +670,8 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=25,
 
         param1=((train_y1.shape[1],0,0),(2038, expit, logistic_prime),(50, expit, logistic_prime))
         param2=((train_y2.shape[1],0,0),(1608, expit, logistic_prime),(50, expit, logistic_prime))
+        ##param1=((train_y1.shape[1],0,0),(50, expit, logistic_prime))
+        ##param2=((train_y2.shape[1],0,0),(50, expit, logistic_prime))
         W1s = []
         b1s = []
         for i in range(len(SdA_inp.dA_layers)):
@@ -706,16 +686,23 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=25,
             b2s[-1] = b2s[-1].reshape((b2s[-1].shape[0], 1))
 
         #W1s[0] = numpy.random.random(W1s[0].shape).astype(numpy.float32)
+        numpy.random.seed(0)
         N1=netCCA(train_y1,param1, W1s, b1s)
         N2=netCCA(train_y2,param2, W2s, b2s)
         N = dCCA(train_y1, train_y2, N1, N2)
         cnt = 0
-        from dcca_numpy import cca_cost
+        from dcca_numpy import cca_cost, cca, order_cost
         while True:
-            N.train(1, 0.0001)
+            N.train(1, 0.1)
             cnt += 1
-            print '****', cnt, cca_cost(N1.predict(test_set_x.eval()), N2.predict(test_set_y.eval()))
-            if cnt == 2:
+            print '****', cnt, order_cost(N1.predict(test_set_x.eval())[:1000,:], N2.predict(test_set_y.eval())[:1000,:])
+            f=open('netcca.pkl', 'w+')
+            import pickle
+            pickle.dump(N, f)
+            pickle.dump(N, f)
+            f.flush()
+            f.close() 
+            if cnt == 200:
                 break
         for i in range(len(SdA_inp.dA_layers)):
             SdA_inp.dA_layers[i].W = theano.shared( N1.weights[i].T )
@@ -795,11 +782,9 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=25,
         n_out=28*28//2
     )
     # end-snippet-3 start-snippet-4
-    #########################
     # end-snippet-4
-    ########################
+    
     # FINETUNING THE MODEL #
-    ########################
 
     # get the training, validation and testing function for the model
     print '... getting the finetuning functions'
@@ -907,9 +892,8 @@ def load_data_half(dataset):
     :param dataset: the path to the dataset (here MNIST)
     '''
 
-    #############
     # LOAD DATA #
-    #############
+    
     import cPickle
     import gzip
     # Download the MNIST dataset if it is not present
@@ -951,8 +935,12 @@ def load_data_half(dataset):
         data_x = data_x.reshape((data_x.shape[0], 28,28))
         data_y = data_x[:,:,14:].reshape((data_x.shape[0], 28*14))
         data_x = data_x[:,:,:14].reshape((data_x.shape[0], 28*14))
-        #data_x = data_x[:5000,:]
-        #data_y = data_y[:5000,:]
+        for j in range(data_x.shape[1]):
+            data_x[:, j] -= numpy.mean(data_x[:, j])
+        for j in range(data_y.shape[1]):
+            data_y[:, j] -= numpy.mean(data_y[:, j])
+        data_x = data_x[:5000,:]
+        data_y = data_y[:5000,:]
 
         #data_y = data_y[:]
 
@@ -976,15 +964,15 @@ def load_data_half(dataset):
             (test_set_x, test_set_y)]
     return rval
 
-def plot_weights(w, M=28, N=28):
+def plot_weights(w, M=28, N=28, num=10):
     import numpy as np
-    a=np.zeros((M*10,N*10))
-    for i in range(100):
-        m=i%10
-        n=i/10
+    a=np.zeros((M*num,N*num))
+    for i in range(num*num):
+        m=i%num
+        n=i/num
         a[m*M:(m+1)*M, n*N:(n+1)*N] = w[i,:].reshape((M,N))
     pp.imshow(a,interpolation='none',aspect='auto')
-    pp.show()
+    #pp.show()
 
 if __name__ == '__main__':
     test_SdA_regress()
