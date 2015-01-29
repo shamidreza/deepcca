@@ -1,7 +1,7 @@
 deepcca
 =======
 
-a python code for deep canonical correlation analysis (dcca) written on top of theano  
+a python code for deep canonical correlation analysis (dcca) written using numpy
   
 Requirements:  
 1- numpy  
