@@ -46,6 +46,10 @@ try:
 except ImportError:
     print 'matplotlib is could not be imported'
 
+def Trelu(x):
+    #return theano.tensor.switch(x<0, 0, x)
+    return T.maximum(0,x)
+
 # start-snippet-1
 class SdA(object):
     """Stacked denoising auto-encoder class (SdA)
@@ -138,7 +142,8 @@ class SdA(object):
                                         input=layer_input,
                                         n_in=input_size,
                                         n_out=hidden_layers_sizes[i],
-                                        activation=T.nnet.sigmoid)
+                                        ##activation=T.nnet.sigmoid)
+                                        activation=Trelu)
             # add the layer to our list of layers
             self.sigmoid_layers.append(sigmoid_layer)
             # its arguably a philosophical question...
@@ -565,7 +570,7 @@ class SdA_regress(object):
 
 
     
-def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=15,
+def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=10,
              pretrain_lr=0.01, training_epochs=1000,
              dataset='mnist.pkl.gz', batch_size=20):
     datasets = load_data_half(dataset)
@@ -585,11 +590,11 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=15,
     # construct the stacked denoising autoencoder class
     SdA_inp = SdA(numpy_rng,
                   n_ins=392,
-                  hidden_layers_sizes=[50]
+                  hidden_layers_sizes=[2038,50]
     )
     SdA_out = SdA(numpy_rng,
                   n_ins=392,
-                  hidden_layers_sizes=[50]
+                  hidden_layers_sizes=[1608,50]
     )
         
     # PRETRAINING THE MODEL #
@@ -648,30 +653,30 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=15,
     
         
     if 0: # save aes
-        f=open('aes_normalized.pkl', 'w+')
+        f=open('aes_relu.pkl', 'w+')
         import pickle
         pickle.dump(SdA_inp, f)
         pickle.dump(SdA_out, f)
         f.flush()
         f.close() 
     if 1: # load aes
-        f=open('aes_normalized.pkl', 'r')
+        f=open('aes_relu.pkl', 'r')
         import pickle
         SdA_inp=pickle.load(f)
         SdA_out=pickle.load(f)
         f.close()    
    
     if 1: # cca
-        from dcca_numpy import netCCA, dCCA, expit, logistic_prime, linear, linear_prime
+        from dcca_numpy import netCCA, dCCA, expit, logistic_prime, linear, linear_prime, relu, relu_prime
         train_y1 = train_set_x.eval()
         train_y2 = train_set_y.eval()
         test_y1 = test_set_x.eval()
         test_y2 = test_set_y.eval()
 
-        ##param1=((train_y1.shape[1],0,0),(2038, expit, logistic_prime),(50, expit, logistic_prime))
-        ##param2=((train_y2.shape[1],0,0),(1608, expit, logistic_prime),(50, expit, logistic_prime))
-        param1=((train_y1.shape[1],0,0),(50, expit, logistic_prime))
-        param2=((train_y2.shape[1],0,0),(50, expit, logistic_prime))
+        param1=((train_y1.shape[1],0,0),(2038, relu, relu_prime),(50, relu, relu_prime))
+        param2=((train_y2.shape[1],0,0),(1608, relu, relu_prime),(50, relu, relu_prime))
+        ##param1=((train_y1.shape[1],0,0),(50, relu, relu_prime))
+        ##param2=((train_y2.shape[1],0,0),(50, relu, relu_prime))
         W1s = []
         b1s = []
         for i in range(len(SdA_inp.dA_layers)):
@@ -691,10 +696,18 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=15,
         N2=netCCA(train_y2,param2, W2s, b2s)
         N = dCCA(train_y1, train_y2, N1, N2)
         cnt = 0
-        from dcca_numpy import cca_cost, cca, order_cost
+        from dcca_numpy import cca_cost, cca, order_cost, cor_cost
         while True:
-            print '****', cnt, order_cost(N1.predict(test_set_x.eval())[:5000,:], N2.predict(test_set_y.eval())[:5000,:])
-            N.train(1, 0.01)
+            X=N1.predict(test_set_x.eval())
+            Y=N2.predict(test_set_y.eval())
+            _H1 = numpy.dot(X, N.A1)
+            _H2 = numpy.dot(Y, N.A2)
+            print '****', cnt, cor_cost(_H1, _H2)
+            if cnt % 2:
+                N.train(1, True, 0.1)
+            else:
+                N.train(1, False, 0.1)
+
             cnt += 1
             f=open('netcca.pkl', 'w+')
             import pickle
@@ -702,7 +715,7 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=15,
             pickle.dump(N, f)
             f.flush()
             f.close() 
-            if cnt == 200:
+            if cnt == 2000:
                 break
         for i in range(len(SdA_inp.dA_layers)):
             SdA_inp.dA_layers[i].W = theano.shared( N1.weights[i].T )

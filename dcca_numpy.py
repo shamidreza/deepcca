@@ -325,10 +325,10 @@ class netCCA(object):
         n=self.n_layers-2
         for i in xrange(n,0,-1):
             self.errors[i] = self.fprimes[i](self.inputs[i])*self.weights[i].T.dot(self.errors[i+1])
-            self.weights_batch[i] += (np.outer(self.errors[i+1],self.outputs[i])+0.0001*np.sign(self.weights[i]))
-            self.biases_batch[i] += (self.errors[i+1])+0.0001*np.sign(self.biases[i])
-        self.weights_batch[0] += (np.outer(self.errors[1],self.outputs[0])+0.0001*np.sign(self.weights[0]))
-        self.biases_batch[0] += self.errors[1] + +0.0001*np.sign(self.biases[0])
+            self.weights_batch[i] += (np.outer(self.errors[i+1],self.outputs[i])+0.000*np.sign(self.weights[i]))
+            self.biases_batch[i] += (self.errors[i+1])+0.000*np.sign(self.biases[i])
+        self.weights_batch[0] += (np.outer(self.errors[1],self.outputs[0])+0.000*np.sign(self.weights[0]))
+        self.biases_batch[0] += self.errors[1] + +0.000*np.sign(self.biases[0])
     def train(self,n_iter, learning_rate=1):
         #Updates the weights after comparing each input in X with y
         #repeats this process n_iter times.
@@ -360,18 +360,21 @@ class dCCA(object):
         self.netCCA2 = netCCA2
         self.X1 = X1
         self.X2 = X2
-    
+        self.A1=np.eye(netCCA1.sizes[-1])
+        self.A2=np.eye(netCCA1.sizes[-1])
+
     def predict_x1(self, X1):
         return self.netCCA1.predict(X1)
     def predict_x2(self, X2):
         return self.netCCA2.predict(X2)
-    def train(self,n_iter, learning_rate=0.05):
+    def train(self,n_iter, first, learning_rate=0.05):
         #Updates the weights after comparing each input in X with y
         #repeats this process n_iter times.
         self.learning_rate=learning_rate
         #H1 = self.netCCA1.predict(self.X1[:,:])
         #H2 = self.netCCA2.predict(self.X2[:,:])
         #cca_prime(H1,H2)
+        
         for repeat in range(n_iter):
             #We shuffle the order in which we go through the inputs on each iter.
             #index=list(range(n))
@@ -386,15 +389,21 @@ class dCCA(object):
             #cnt = 0
             H1 = self.netCCA1.predict(self.X1)
             H2 = self.netCCA2.predict(self.X2)
-            print repeat, 'before', order_cost(H1, H2)
+            #self.A1, self.A2, _H1, _H2 = CCA(H1,H2)
+            _H1 = np.dot(H1, self.A1)
+            _H2 = np.dot(H2, self.A2)
+            print repeat, 'before', cor_cost(_H1, _H2)
 
-            self.netCCA1.update_weights_batch(self.X1, H1, H2, self.learning_rate)
-            self.netCCA2.update_weights_batch(self.X2, H2, H1, self.learning_rate)
-            self.netCCA1._update_weights()
-            self.netCCA2._update_weights()
+            if first:
+                self.netCCA1.update_weights_batch(self.X1, H1, H2, self.learning_rate)
+                self.netCCA1._update_weights()
+            else:
+                self.netCCA2.update_weights_batch(self.X2, H2, H1, self.learning_rate)
+                self.netCCA2._update_weights()
             H1 = self.netCCA1.predict(self.X1)
             H2 = self.netCCA2.predict(self.X2)
-            print repeat, 'after', order_cost(H1, H2)
+            self.A1, self.A2, _H1, _H2 = CCA(H1,H2)
+            print repeat, 'after', cor_cost(_H1, _H2)
            
 
 #expit is a fast way to compute logistic using precomputed exp.

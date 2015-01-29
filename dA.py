@@ -42,7 +42,10 @@ from theano.tensor.shared_randomstreams import RandomStreams
 
 from logistic_sgd import load_data
 from utils import tile_raster_images
-
+def Trelu(x):
+    #return theano.tensor.switch(x<0, 0, x)
+    #return T.maximum(0,x)
+    return x * (x > 0)
 try:
     import PIL.Image as Image
 except ImportError:
@@ -146,11 +149,19 @@ class dA(object):
             # converted using asarray to dtype
             # theano.config.floatX so that the code is runable on GPU
             initial_W = numpy.asarray(
-                numpy_rng.uniform(
-                    low=-4 * numpy.sqrt(6. / (n_hidden + n_visible)),
-                    high=4 * numpy.sqrt(6. / (n_hidden + n_visible)),
-                    size=(n_visible, n_hidden)
-                ),
+                #numpy_rng.uniform(
+                    #low=-4 * numpy.sqrt(6. / (n_hidden + n_visible)),
+                    #high=4 * numpy.sqrt(6. / (n_hidden + n_visible)),
+                    #size=(n_visible, n_hidden)
+                #),
+                
+                #numpy_rng.normal(
+                    #low=-4 * numpy.sqrt(6. / (n_hidden + n_visible)),
+                    #high=4 * numpy.sqrt(6. / (n_hidden + n_visible)),
+                    #size=(n_visible, n_hidden)
+                #),
+                numpy.random.normal(loc=0., scale=.01, size=(n_visible, n_hidden)),
+
                 dtype=theano.config.floatX
             )
             W = theano.shared(value=initial_W, name='W', borrow=True)
@@ -160,7 +171,7 @@ class dA(object):
                 value=numpy.zeros(
                     n_visible,
                     dtype=theano.config.floatX
-                ),
+                )+numpy.random.normal(loc=0., scale=.001, size=(n_visible)),
                 borrow=True
             )
 
@@ -169,7 +180,7 @@ class dA(object):
                 value=numpy.zeros(
                     n_hidden,
                     dtype=theano.config.floatX
-                ),
+                )+numpy.random.normal(loc=0., scale=.001, size=(n_hidden)),
                 name='b',
                 borrow=True
             )
@@ -228,14 +239,14 @@ class dA(object):
 
     def get_hidden_values(self, input):
         """ Computes the values of the hidden layer """
-        return T.nnet.sigmoid(T.dot(input, self.W) + self.b)
+        return Trelu(T.dot(input, self.W) + self.b)
 
     def get_reconstructed_input(self, hidden):
         """Computes the reconstructed input given the values of the
         hidden layer
 
         """
-        return T.nnet.sigmoid(T.dot(hidden, self.W_prime) + self.b_prime)
+        return Trelu(T.dot(hidden, self.W_prime) + self.b_prime)
 
     def get_cost_updates(self, corruption_level, learning_rate):
         """ This function computes the cost and the updates for one trainng
@@ -247,7 +258,8 @@ class dA(object):
         # note : we sum over the size of a datapoint; if we are using
         #        minibatches, L will be a vector, with one entry per
         #        example in minibatch
-        L = - T.sum(self.x * T.log(z) + (1 - self.x) * T.log(1 - z), axis=1)
+        ##L = - T.sum(self.x * T.log(z) + (1 - self.x) * T.log(1 - z), axis=1)
+        L=T.mean((self.x-z)**2)
         # note : L is now a vector, where each element is the
         #        cross-entropy cost of the reconstruction of the
         #        corresponding example of the minibatch. We need to
@@ -256,7 +268,7 @@ class dA(object):
         
         L1_reg = 0.001
         L2_reg = 0.001
-        cost = T.mean(L) + L1_reg * self.L1 + L2_reg * self.L2_sqr
+        cost = T.mean(L) #+ L1_reg * self.L1 + L2_reg * self.L2_sqr
         
         # compute the gradients of the cost of the `dA` with respect
         # to its parameters
@@ -270,7 +282,7 @@ class dA(object):
         return (cost, updates)
 
 
-def test_dA(learning_rate=0.1, training_epochs=15,
+def test_dA(learning_rate=0.01, training_epochs=15,
             dataset='mnist.pkl.gz',
             batch_size=20, output_folder='dA_plots'):
 
