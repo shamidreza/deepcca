@@ -694,7 +694,7 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=15,
         from dcca_numpy import cca_cost, cca, order_cost
         while True:
             print '****', cnt, order_cost(N1.predict(test_set_x.eval())[:5000,:], N2.predict(test_set_y.eval())[:5000,:])
-            N.train(1, 0.1)
+            N.train(1, 0.01)
             cnt += 1
             f=open('netcca.pkl', 'w+')
             import pickle

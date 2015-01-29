@@ -42,8 +42,8 @@ def cca(H1, H2):
     H2bar = H2bar-H2bar.mean(axis=0)
     H1bar = H1bar.T
     H2bar = H2bar.T
-    #H1 += np.random.random(H1.shape)*0.00001
-    #H2 += np.random.random(H2.shape)*0.00001
+    H1bar += np.random.random(H1bar.shape)*0.00001
+    H2bar += np.random.random(H2bar.shape)*0.00001
     r1 = 0.00000001
     m = H1.shape[0]
     #H1bar = H1 - (1.0/m)*np.dot(H1, np.ones((m,m), dtype=np.float32))
@@ -68,16 +68,10 @@ def cca_prime(H1, H2):
     H2bar = H2bar-H2bar.mean(axis=0)
     H1bar = H1bar.T
     H2bar = H2bar.T
-    #H1 += np.random.random(H1.shape)*0.00001
-    #H2 += np.random.random(H2.shape)*0.00001
+    H1bar += np.random.random(H1bar.shape)*0.00001
+    H2bar += np.random.random(H2bar.shape)*0.00001
     r1 = 0.00000001
     m = H1.shape[0]
-    #H1bar = copy.deepcopy(H1)
-    #for j in range(H1.shape[0]):
-        #H1bar[j, :] -= np.mean(H1bar[j, :])
-    #H2bar = copy.deepcopy(H2)
-    #for j in range(H2.shape[0]):
-        #H2bar[j, :] -= np.mean(H2bar[j, :])        
     
     SigmaHat12 = (1.0/(m-1))*np.dot(H1bar, H2bar.T)
     SigmaHat11 = (1.0/(m-1))*np.dot(H1bar, H1bar.T)
@@ -85,7 +79,6 @@ def cca_prime(H1, H2):
     SigmaHat22 = (1.0/(m-1))*np.dot(H2bar, H2bar.T)
     SigmaHat22 = SigmaHat22 + r1*np.identity(SigmaHat22.shape[0], dtype=np.float32)
     SigmaHat11_2=mat_pow(SigmaHat11).real.astype(np.float32)
-    SigmaHat12_2=mat_pow(SigmaHat12).real.astype(np.float32)
     SigmaHat22_2=mat_pow(SigmaHat22).real.astype(np.float32)
     Tval = np.dot(SigmaHat11_2, np.dot(SigmaHat12, SigmaHat22_2))
     U, D, V, = np.linalg.svd(Tval)

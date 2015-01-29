@@ -3,17 +3,17 @@ from numpy.linalg import lstsq,eig
 from numpy import cov,dot,arange,c_
 import numpy as np    
 
-def cca(x_tn,y_tm):
+def cca(x_tn,y_tm, reg=0.00000001):
     x_tn = x_tn-x_tn.mean(axis=0)
     y_tm = y_tm-y_tm.mean(axis=0)
     N = x_tn.shape[1]
     M = y_tm.shape[1]
     xy_tq = c_[x_tn,y_tm]
     cqq = cov(xy_tq,rowvar=0)
-    cxx = cqq[:N,:N]+0.00000001*np.ones((N,N))
-    cxy = cqq[:N,N:(N+M)]+0.00000001*np.ones((N,N))
-    cyx = cqq[N:(N+M),:N]+0.00000001*np.ones((N,N))
-    cyy = cqq[N:(N+M),N:(N+M)]+0.00000001*np.ones((N,N))
+    cxx = cqq[:N,:N]+reg*np.eye(N)+0.000000001*np.ones((N,N))
+    cxy = cqq[:N,N:(N+M)]+0.000000001*np.ones((N,N))
+    cyx = cqq[N:(N+M),:N]+0.000000001*np.ones((N,N))
+    cyy = cqq[N:(N+M),N:(N+M)]+reg*np.eye(N)+0.000000001*np.ones((N,N))
     
     K = min(N,M)
     
