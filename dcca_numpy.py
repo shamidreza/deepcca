@@ -13,7 +13,7 @@ def order_cost(H1,H2):
     #_cca=CCA(n_components=H1.shape[1])
     #x,y=_cca.fit_transform(H1, H2)
     a,b,x,y=CCA(H1,H2)
-    return cor_cost(x,y)
+    return cor_cost(x,y), cca(x,y)
 def mat_pow(matrix):
     return scipy.linalg.sqrtm(np.linalg.inv(matrix))
 def mat_pow2(matrix):
@@ -36,53 +36,58 @@ def cor_cost(H1,H2):
 def cca_cost(H1, H2):
     return (cca(H1, H2)+cca(H2, H1))/(cca(H1, H1)+cca(H2, H2))
 def cca(H1, H2):
-    H1 = H1.T
-    H2 = H2.T
-    m = H1.shape[1]
     H1bar = copy.deepcopy(H1)
-    for j in range(H1.shape[0]):
-        H1bar[j, :] -= np.mean(H1bar[j, :])
+    H1bar = H1bar-H1bar.mean(axis=0)
     H2bar = copy.deepcopy(H2)
-    for j in range(H2.shape[0]):
-        H2bar[j, :] -= np.mean(H2bar[j, :])
+    H2bar = H2bar-H2bar.mean(axis=0)
+    H1bar = H1bar.T
+    H2bar = H2bar.T
+    #H1 += np.random.random(H1.shape)*0.00001
+    #H2 += np.random.random(H2.shape)*0.00001
+    r1 = 0.00000001
+    m = H1.shape[0]
     #H1bar = H1 - (1.0/m)*np.dot(H1, np.ones((m,m), dtype=np.float32))
     #H2bar = H2 - (1.0/m)*np.dot(H2, np.ones((m,m), dtype=np.float32))
     SigmaHat12 = (1.0/(m-1))*np.dot(H1bar, H2bar.T)
     SigmaHat11 = (1.0/(m-1))*np.dot(H1bar, H1bar.T)
-    SigmaHat11 = SigmaHat11 + 0.0001*np.identity(SigmaHat11.shape[0], dtype=np.float32)
+    SigmaHat11 = SigmaHat11 + r1*np.identity(SigmaHat11.shape[0], dtype=np.float32)
     SigmaHat22 = (1.0/(m-1))*np.dot(H2bar, H2bar.T)
-    SigmaHat22 = SigmaHat22 + 0.0001*np.identity(SigmaHat22.shape[0], dtype=np.float32)
+    SigmaHat22 = SigmaHat22 + r1*np.identity(SigmaHat22.shape[0], dtype=np.float32)
     SigmaHat11_2=mat_pow(SigmaHat11).real.astype(np.float32)
     SigmaHat22_2=mat_pow(SigmaHat22).real.astype(np.float32)
     Tval = np.dot(SigmaHat11_2, np.dot(SigmaHat12, SigmaHat22_2))
-    #U, D, V, = np.linalg.svd(Tval)
+    U, D, V, = np.linalg.svd(Tval)
 
-    corr =  np.trace(np.dot(Tval.T, Tval))#**(0.5)
+    corr =  np.trace(np.dot(Tval.T, Tval))**(0.5)
     return corr
 
 def cca_prime(H1, H2):
-    H1 = H1.T
-    H2 = H2.T
-    m = H1.shape[1]
     H1bar = copy.deepcopy(H1)
-    for j in range(H1.shape[0]):
-        H1bar[j, :] -= np.mean(H1bar[j, :])
+    H1bar = H1bar-H1bar.mean(axis=0)
     H2bar = copy.deepcopy(H2)
-    for j in range(H2.shape[0]):
-        H2bar[j, :] -= np.mean(H2bar[j, :])
-        
-    H1bar = H1 - (1.0/m)*np.dot(H1, np.ones((m,m), dtype=np.float32))
-    H2bar = H2 - (1.0/m)*np.dot(H2, np.ones((m,m), dtype=np.float32))
+    H2bar = H2bar-H2bar.mean(axis=0)
+    H1bar = H1bar.T
+    H2bar = H2bar.T
+    #H1 += np.random.random(H1.shape)*0.00001
+    #H2 += np.random.random(H2.shape)*0.00001
+    r1 = 0.00000001
+    m = H1.shape[0]
+    #H1bar = copy.deepcopy(H1)
+    #for j in range(H1.shape[0]):
+        #H1bar[j, :] -= np.mean(H1bar[j, :])
+    #H2bar = copy.deepcopy(H2)
+    #for j in range(H2.shape[0]):
+        #H2bar[j, :] -= np.mean(H2bar[j, :])        
+    
     SigmaHat12 = (1.0/(m-1))*np.dot(H1bar, H2bar.T)
     SigmaHat11 = (1.0/(m-1))*np.dot(H1bar, H1bar.T)
-    SigmaHat11 = SigmaHat11 + 0.0001*np.identity(SigmaHat11.shape[0], dtype=np.float32)
+    SigmaHat11 = SigmaHat11 + r1*np.identity(SigmaHat11.shape[0], dtype=np.float32)
     SigmaHat22 = (1.0/(m-1))*np.dot(H2bar, H2bar.T)
-    SigmaHat22 = SigmaHat22 + 0.0001*np.identity(SigmaHat22.shape[0], dtype=np.float32)
+    SigmaHat22 = SigmaHat22 + r1*np.identity(SigmaHat22.shape[0], dtype=np.float32)
     SigmaHat11_2=mat_pow(SigmaHat11).real.astype(np.float32)
     SigmaHat12_2=mat_pow(SigmaHat12).real.astype(np.float32)
     SigmaHat22_2=mat_pow(SigmaHat22).real.astype(np.float32)
     Tval = np.dot(SigmaHat11_2, np.dot(SigmaHat12, SigmaHat22_2))
-    
     U, D, V, = np.linalg.svd(Tval)
     D=np.diag(D)
     UVT = np.dot(U, V)
@@ -327,10 +332,10 @@ class netCCA(object):
         n=self.n_layers-2
         for i in xrange(n,0,-1):
             self.errors[i] = self.fprimes[i](self.inputs[i])*self.weights[i].T.dot(self.errors[i+1])
-            self.weights_batch[i] += (np.outer(self.errors[i+1],self.outputs[i])+0.000000*np.sign(self.weights[i]))
-            self.biases_batch[i] += (self.errors[i+1])+0.000000*np.sign(self.biases[i])
-        self.weights_batch[0] += (np.outer(self.errors[1],self.outputs[0])+0.000000*np.sign(self.weights[0]))
-        self.biases_batch[0] += self.errors[1] + +0.000000*np.sign(self.biases[0])
+            self.weights_batch[i] += (np.outer(self.errors[i+1],self.outputs[i])+0.0001*np.sign(self.weights[i]))
+            self.biases_batch[i] += (self.errors[i+1])+0.0001*np.sign(self.biases[i])
+        self.weights_batch[0] += (np.outer(self.errors[1],self.outputs[0])+0.0001*np.sign(self.weights[0]))
+        self.biases_batch[0] += self.errors[1] + +0.0001*np.sign(self.biases[0])
     def train(self,n_iter, learning_rate=1):
         #Updates the weights after comparing each input in X with y
         #repeats this process n_iter times.
@@ -371,8 +376,9 @@ class dCCA(object):
         #Updates the weights after comparing each input in X with y
         #repeats this process n_iter times.
         self.learning_rate=learning_rate
-        H1 = self.netCCA1.predict(self.X1[:1000,:])
-        H2 = self.netCCA2.predict(self.X2[:1000,:])
+        #H1 = self.netCCA1.predict(self.X1[:,:])
+        #H2 = self.netCCA2.predict(self.X2[:,:])
+        #cca_prime(H1,H2)
         for repeat in range(n_iter):
             #We shuffle the order in which we go through the inputs on each iter.
             #index=list(range(n))
@@ -382,26 +388,21 @@ class dCCA(object):
             #y=self.y[row]
             #H1 = self.netCCA1.predict(self.X1)
             #H2 = self.netCCA2.predict(self.X2)
-            st = 0
-            en = min(5000, self.X1.shape[0])            
-            while True:
-                H1 = self.netCCA1.predict(self.X1[st:en,:])
-                H2 = self.netCCA2.predict(self.X2[st:en,:])
-                print repeat+1, 'before', order_cost(H1[:1000,:], H2[:1000,:])
+            #st = 0
+            #en = min(10000, self.X1.shape[0])     
+            #cnt = 0
+            H1 = self.netCCA1.predict(self.X1)
+            H2 = self.netCCA2.predict(self.X2)
+            print repeat, 'before', order_cost(H1, H2)
 
-                self.netCCA1.update_weights_batch(self.X1[st:en,:], H1, H2, self.learning_rate)
-                self.netCCA2.update_weights_batch(self.X2[st:en,:], H2, H1, self.learning_rate)
-                self.netCCA1._update_weights()
-                self.netCCA2._update_weights()
-                H1 = self.netCCA1.predict(self.X1[st:en,:])
-                H2 = self.netCCA2.predict(self.X2[st:en,:])
-                print repeat+1, 'after', order_cost(H1[:1000,:], H2[:1000,:])
-
-                if en >= self.X1.shape[0]:
-                    break
-                
-                st += 5000
-                en = min(en+5000, self.X1.shape[0])
+            self.netCCA1.update_weights_batch(self.X1, H1, H2, self.learning_rate)
+            self.netCCA2.update_weights_batch(self.X2, H2, H1, self.learning_rate)
+            self.netCCA1._update_weights()
+            self.netCCA2._update_weights()
+            H1 = self.netCCA1.predict(self.X1)
+            H2 = self.netCCA2.predict(self.X2)
+            print repeat, 'after', order_cost(H1, H2)
+           
 
 #expit is a fast way to compute logistic using precomputed exp.
 from scipy.special import expit

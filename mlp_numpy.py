@@ -2,6 +2,10 @@ import numpy as np
 from scipy.special import expit
 import copy
 
+def linear(x):
+    return x
+def linear_prime(x):
+    return 1.0
 def relu(x):
     y = copy.deepcopy(x)
     y[y<=0] = 0.0

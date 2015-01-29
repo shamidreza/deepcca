@@ -565,7 +565,7 @@ class SdA_regress(object):
 
 
     
-def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=3,
+def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=15,
              pretrain_lr=0.01, training_epochs=1000,
              dataset='mnist.pkl.gz', batch_size=20):
     datasets = load_data_half(dataset)
@@ -585,11 +585,11 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=3,
     # construct the stacked denoising autoencoder class
     SdA_inp = SdA(numpy_rng,
                   n_ins=392,
-                  hidden_layers_sizes=[2038, 50]
+                  hidden_layers_sizes=[50]
     )
     SdA_out = SdA(numpy_rng,
                   n_ins=392,
-                  hidden_layers_sizes=[1608, 50]
+                  hidden_layers_sizes=[50]
     )
         
     # PRETRAINING THE MODEL #
@@ -654,7 +654,7 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=3,
         pickle.dump(SdA_out, f)
         f.flush()
         f.close() 
-    if 0: # load aes
+    if 1: # load aes
         f=open('aes_normalized.pkl', 'r')
         import pickle
         SdA_inp=pickle.load(f)
@@ -662,16 +662,16 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=3,
         f.close()    
    
     if 1: # cca
-        from dcca_numpy import netCCA, dCCA, expit, logistic_prime
+        from dcca_numpy import netCCA, dCCA, expit, logistic_prime, linear, linear_prime
         train_y1 = train_set_x.eval()
         train_y2 = train_set_y.eval()
         test_y1 = test_set_x.eval()
         test_y2 = test_set_y.eval()
 
-        param1=((train_y1.shape[1],0,0),(2038, expit, logistic_prime),(50, expit, logistic_prime))
-        param2=((train_y2.shape[1],0,0),(1608, expit, logistic_prime),(50, expit, logistic_prime))
-        ##param1=((train_y1.shape[1],0,0),(50, expit, logistic_prime))
-        ##param2=((train_y2.shape[1],0,0),(50, expit, logistic_prime))
+        ##param1=((train_y1.shape[1],0,0),(2038, expit, logistic_prime),(50, expit, logistic_prime))
+        ##param2=((train_y2.shape[1],0,0),(1608, expit, logistic_prime),(50, expit, logistic_prime))
+        param1=((train_y1.shape[1],0,0),(50, expit, logistic_prime))
+        param2=((train_y2.shape[1],0,0),(50, expit, logistic_prime))
         W1s = []
         b1s = []
         for i in range(len(SdA_inp.dA_layers)):
@@ -693,9 +693,9 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=3,
         cnt = 0
         from dcca_numpy import cca_cost, cca, order_cost
         while True:
+            print '****', cnt, order_cost(N1.predict(test_set_x.eval())[:5000,:], N2.predict(test_set_y.eval())[:5000,:])
             N.train(1, 0.1)
             cnt += 1
-            print '****', cnt, order_cost(N1.predict(test_set_x.eval())[:1000,:], N2.predict(test_set_y.eval())[:1000,:])
             f=open('netcca.pkl', 'w+')
             import pickle
             pickle.dump(N, f)
@@ -935,12 +935,12 @@ def load_data_half(dataset):
         data_x = data_x.reshape((data_x.shape[0], 28,28))
         data_y = data_x[:,:,14:].reshape((data_x.shape[0], 28*14))
         data_x = data_x[:,:,:14].reshape((data_x.shape[0], 28*14))
-        for j in range(data_x.shape[1]):
-            data_x[:, j] -= numpy.mean(data_x[:, j])
-        for j in range(data_y.shape[1]):
-            data_y[:, j] -= numpy.mean(data_y[:, j])
-        data_x = data_x[:5000,:]
-        data_y = data_y[:5000,:]
+        #for j in range(data_x.shape[1]):
+            #data_x[:, j] -= numpy.mean(data_x[:, j])
+        #for j in range(data_y.shape[1]):
+            #data_y[:, j] -= numpy.mean(data_y[:, j])
+        #data_x = data_x[:10000,:]
+        #data_y = data_y[:10000,:]
 
         #data_y = data_y[:]
 

@@ -10,10 +10,10 @@ def cca(x_tn,y_tm):
     M = y_tm.shape[1]
     xy_tq = c_[x_tn,y_tm]
     cqq = cov(xy_tq,rowvar=0)
-    cxx = cqq[:N,:N]
-    cxy = cqq[:N,N:(N+M)]
-    cyx = cqq[N:(N+M),:N]
-    cyy = cqq[N:(N+M),N:(N+M)]
+    cxx = cqq[:N,:N]+0.00000001*np.ones((N,N))
+    cxy = cqq[:N,N:(N+M)]+0.00000001*np.ones((N,N))
+    cyx = cqq[N:(N+M),:N]+0.00000001*np.ones((N,N))
+    cyy = cqq[N:(N+M),N:(N+M)]+0.00000001*np.ones((N,N))
     
     K = min(N,M)
     

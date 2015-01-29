@@ -237,11 +237,11 @@ class dA_joint(object):
 
         self.theano_rng = theano_rng
         self.L1 = (
-            abs(self.W1).sum()+abs(self.W2).sum()+abs(self.b1).sum()+abs(self.b2).sum()+abs(self.b1_prime).sum()+abs(self.b2_prime).sum()
+            abs(self.W1).sum()+abs(self.W2).sum()#+abs(self.b1).sum()+abs(self.b2).sum()+abs(self.b1_prime).sum()+abs(self.b2_prime).sum()
         )
     
         self.L2_sqr = (
-            (self.W1**2).sum()+(self.W2**2).sum()+abs(self.b1**2).sum()+abs(self.b2**2).sum()+abs(self.b1_prime**2).sum()+abs(self.b2_prime**2).sum()
+            (self.W1**2).sum()#+(self.W2**2).sum()#+abs(self.b1**2).sum()+abs(self.b2**2).sum()+abs(self.b1_prime**2).sum()+abs(self.b2_prime**2).sum()
 
         )
         # if no input is given, generate a variable representing the input
@@ -324,10 +324,11 @@ class dA_joint(object):
         #        example in minibatch
         L_x1 = - T.sum(self.x1 * T.log(z1) + (1 - self.x1) * T.log(1 - z1), axis=1)
         L_x2 = - T.sum(self.x2 * T.log(z2) + (1 - self.x2) * T.log(1 - z2), axis=1)
-        #L_X1_x2 = - T.sum(y1 * T.log(y2) + (1 - y1) * T.log(1 - y2), axis=1)
-        #L_X2_x1 = - T.sum(y2 * T.log(y1) + (1 - y2) * T.log(1 - y1), axis=1)
-        L_X1_x2 = T.sum(T.mean((y1-y2)**2,1))
-        cost = T.mean(L_x1) + T.mean(L_x2) + self.cor_reg*T.mean(L_X1_x2)+0.001*self.L1+001*self.L2_sqr# + 0.2*T.mean(L_X2_x1)
+        L_X1_x2 = - T.sum(y1 * T.log(y2) + (1 - y1) * T.log(1 - y2), axis=1)
+        L_X2_x1 = - T.sum(y2 * T.log(y1) + (1 - y2) * T.log(1 - y1), axis=1)
+        #L_X1_x2 = T.mean(T.mean((y1-y2)**2,1))
+        ##cost = T.mean(L_x1) + T.mean(L_x2) + self.cor_reg*T.mean(L_X1_x2)+0.001*self.L1+001*self.L2_sqr# + 0.2*T.mean(L_X2_x1)
+        cost = T.mean(L_x1) + T.mean(L_x2) + T.mean(L_X1_x2) #+ .001*self.L2_sqr# + 0.2*T.mean(L_X2_x1)
 
         # compute the gradients of the cost of the `dA` with respect
         # to its parameters
@@ -340,8 +341,8 @@ class dA_joint(object):
 
         return (cost, updates)
 
-
-def test_dA(learning_rate=0.1, training_epochs=150,
+    
+def test_dA(learning_rate=0.1, training_epochs=15000,
             dataset='mnist.pkl.gz',
             batch_size=5, output_folder='dA_plots'):
 
@@ -411,7 +412,7 @@ def test_dA(learning_rate=0.1, training_epochs=150,
         corruption_level=0.3,
         learning_rate=learning_rate
     )
-    cor_reg_val = numpy.float32(1.0)
+    cor_reg_val = numpy.float32(5.0)
     train_da = theano.function(
         [index],
         cost,
@@ -437,6 +438,22 @@ def test_dA(learning_rate=0.1, training_epochs=150,
                },
                name='fprop_x2'
     )
+    rec_x1 = theano.function(
+               [],
+               outputs=da.rec1,
+               givens={
+                   x1: test_set_x
+               },
+               name='rec_x1'
+    )
+    rec_x2 = theano.function(
+               [],
+               outputs=da.rec2,
+               givens={
+                   x2: test_set_y
+               },
+               name='rec_x2'
+    )
     fprop_x1_to_x2 = theano.function(
                [],
                outputs=da.reg,
@@ -446,7 +463,7 @@ def test_dA(learning_rate=0.1, training_epochs=150,
                name='fprop_x12x2'
     )
     updates_reg = [
-            (da.cor_reg, da.cor_reg+theano.shared(numpy.float32(1.0)))
+            (da.cor_reg, da.cor_reg+theano.shared(numpy.float32(0.5)))
     ]
     update_reg = theano.function(
         [],
@@ -470,11 +487,18 @@ def test_dA(learning_rate=0.1, training_epochs=150,
         #cor_reg_val += 1
         #da.cor_reg = theano.shared(cor_reg_val) 
         update_reg()
-        print 'Training epoch %d, cost ' % epoch, numpy.mean(c)
+        
+        X1H=rec_x1()
+        X2H=rec_x2()
+        print 'Training epoch'
+        print 'Reconstruction ', numpy.mean(numpy.mean((X1H-test_set_x.eval())**2,1)),\
+              numpy.mean(numpy.mean((X2H-test_set_y.eval())**2,1))
+
+        X2H=fprop_x1_to_x2()
+        print 'Regression ', numpy.mean(numpy.mean((X2H-test_set_y.eval())**2,1))
         H1=fprop_x1()
         H2=fprop_x2()
-        X2H=fprop_x1_to_x2()
-        print 'Training epoch %d, cost ' % epoch, cor_cost(H1, H2)
+        print 'Correlation ', cor_cost(H1, H2)
     end_time = time.clock()
 
     training_time = (end_time - start_time)
