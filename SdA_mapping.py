@@ -29,10 +29,9 @@
    Systems 19, 2007
 
 """
-import os
 import sys
 import time
-
+import os
 import numpy
 
 import theano
@@ -40,15 +39,20 @@ import theano.tensor as T
 from theano.tensor.shared_randomstreams import RandomStreams
 
 from mlp import HiddenLayer
-from dA import dA
+from dA import dA, dA_nobias
+from utils import tile_raster_images,plot_weights, load_data_half
+
 try:
     from matplotlib import pyplot as pp
+    import matplotlib.cm as cm
+
 except ImportError:
     print 'matplotlib is could not be imported'
 
 def Trelu(x):
     #return theano.tensor.switch(x<0, 0, x)
-    return T.maximum(0,x)
+    #return T.nnet.sigmoid(x)
+    return T.tanh(x)
 
 # start-snippet-1
 class SdA(object):
@@ -155,13 +159,19 @@ class SdA(object):
 
             # Construct a denoising autoencoder that shared weights with this
             # layer
-            dA_layer = dA(numpy_rng=numpy_rng,
+            #dA_layer = dA(numpy_rng=numpy_rng,
+                          #theano_rng=theano_rng,
+                          #input=layer_input,
+                          #n_visible=input_size,
+                          #n_hidden=hidden_layers_sizes[i],
+                          #W=sigmoid_layer.W,
+                          #bhid=sigmoid_layer.b)
+            dA_layer = dA_nobias(numpy_rng=numpy_rng,
                           theano_rng=theano_rng,
                           input=layer_input,
                           n_visible=input_size,
                           n_hidden=hidden_layers_sizes[i],
-                          W=sigmoid_layer.W,
-                          bhid=sigmoid_layer.b)
+                          W=sigmoid_layer.W)
             self.dA_layers.append(dA_layer)
         # end-snippet-2
         
@@ -570,8 +580,8 @@ class SdA_regress(object):
 
 
     
-def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=10,
-             pretrain_lr=0.01, training_epochs=1000,
+def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=15,
+             pretrain_lr=0.1, training_epochs=1000,
              dataset='mnist.pkl.gz', batch_size=20):
     datasets = load_data_half(dataset)
 
@@ -590,11 +600,11 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=10,
     # construct the stacked denoising autoencoder class
     SdA_inp = SdA(numpy_rng,
                   n_ins=392,
-                  hidden_layers_sizes=[2038,50]
+                  hidden_layers_sizes=[50]
     )
     SdA_out = SdA(numpy_rng,
                   n_ins=392,
-                  hidden_layers_sizes=[1608,50]
+                  hidden_layers_sizes=[50]
     )
         
     # PRETRAINING THE MODEL #
@@ -606,7 +616,7 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=10,
         print '... pre-training the model'
         start_time = time.clock()
         ## Pre-train layer-wise
-        corruption_levels = [.1, .2, .3]
+        corruption_levels = [.5, .1, .3]
         for i in xrange(SdA_inp.n_layers):
             # go through pretraining epochs
             for epoch in xrange(pretraining_epochs):
@@ -653,47 +663,48 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=10,
     
         
     if 0: # save aes
-        f=open('aes_relu.pkl', 'w+')
+        f=open('aes_normalized_shallow_tanh.pkl', 'w+')
         import pickle
         pickle.dump(SdA_inp, f)
         pickle.dump(SdA_out, f)
         f.flush()
         f.close() 
     if 1: # load aes
-        f=open('aes_relu.pkl', 'r')
+        f=open('aes_normalized_shallow_tanh.pkl', 'r')
         import pickle
         SdA_inp=pickle.load(f)
         SdA_out=pickle.load(f)
         f.close()    
    
     if 1: # cca
-        from dcca_numpy import netCCA, dCCA, expit, logistic_prime, linear, linear_prime, relu, relu_prime
+        from dcca_numpy import netCCA_nobias, netCCA, dCCA
+        from mlp_numpy import expit, logistic_prime, linear, linear_prime, relu, relu_prime, tanh, tanh_prime
         train_y1 = train_set_x.eval()
         train_y2 = train_set_y.eval()
         test_y1 = test_set_x.eval()
         test_y2 = test_set_y.eval()
 
-        param1=((train_y1.shape[1],0,0),(2038, relu, relu_prime),(50, relu, relu_prime))
-        param2=((train_y2.shape[1],0,0),(1608, relu, relu_prime),(50, relu, relu_prime))
-        ##param1=((train_y1.shape[1],0,0),(50, relu, relu_prime))
-        ##param2=((train_y2.shape[1],0,0),(50, relu, relu_prime))
+        ##param1=((train_y1.shape[1],0,0),(2038, relu, relu_prime),(50, relu, relu_prime))
+        ##param2=((train_y2.shape[1],0,0),(1608, relu, relu_prime),(50, relu, relu_prime))
+        param1=((train_y1.shape[1],0,0),(50, tanh, tanh_prime))
+        param2=((train_y2.shape[1],0,0),(50, tanh, tanh_prime))
         W1s = []
         b1s = []
         for i in range(len(SdA_inp.dA_layers)):
             W1s.append( SdA_inp.dA_layers[i].W.T.eval() )
-            b1s.append( SdA_inp.dA_layers[i].b.eval() )
-            b1s[-1] = b1s[-1].reshape((b1s[-1].shape[0], 1))
+            #b1s.append( SdA_inp.dA_layers[i].b.eval() )
+            #b1s[-1] = b1s[-1].reshape((b1s[-1].shape[0], 1))
         W2s = []
         b2s = []
         for i in range(len(SdA_out.dA_layers)):
             W2s.append( SdA_out.dA_layers[i].W.T.eval() )
-            b2s.append( SdA_out.dA_layers[i].b.eval() )
-            b2s[-1] = b2s[-1].reshape((b2s[-1].shape[0], 1))
+            #b2s.append( SdA_out.dA_layers[i].b.eval() )
+            #b2s[-1] = b2s[-1].reshape((b2s[-1].shape[0], 1))
 
         #W1s[0] = numpy.random.random(W1s[0].shape).astype(numpy.float32)
         numpy.random.seed(0)
-        N1=netCCA(train_y1,param1, W1s, b1s)
-        N2=netCCA(train_y2,param2, W2s, b2s)
+        N1=netCCA_nobias(train_y1,param1, W1s)
+        N2=netCCA_nobias(train_y2,param2, W2s)
         N = dCCA(train_y1, train_y2, N1, N2)
         cnt = 0
         from dcca_numpy import cca_cost, cca, order_cost, cor_cost
@@ -704,9 +715,9 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=10,
             _H2 = numpy.dot(Y, N.A2)
             print '****', cnt, cor_cost(_H1, _H2)
             if cnt % 2:
-                N.train(1, True, 0.1)
+                N.train(1, True, 0.01)
             else:
-                N.train(1, False, 0.1)
+                N.train(1, False, 0.01)
 
             cnt += 1
             f=open('netcca.pkl', 'w+')
@@ -897,95 +908,6 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=10,
                           os.path.split(__file__)[1] +
                           ' ran for %.2fm' % ((end_time - start_time) / 60.))
 
-
-def load_data_half(dataset):
-    ''' Loads the dataset
-
-    :type dataset: string
-    :param dataset: the path to the dataset (here MNIST)
-    '''
-
-    # LOAD DATA #
-    
-    import cPickle
-    import gzip
-    # Download the MNIST dataset if it is not present
-    data_dir, data_file = os.path.split(dataset)
-    if data_dir == "" and not os.path.isfile(dataset):
-        # Check if dataset is in the data directory.
-        new_path = os.path.join(
-            os.path.split(__file__)[0],
-            "..",
-            "data",
-            dataset
-        )
-        if os.path.isfile(new_path) or data_file == 'mnist.pkl.gz':
-            dataset = new_path
-
-    if (not os.path.isfile(dataset)) and data_file == 'mnist.pkl.gz':
-        import urllib
-        origin = (
-            'http://www.iro.umontreal.ca/~lisa/deep/data/mnist/mnist.pkl.gz'
-        )
-        print 'Downloading data from %s' % origin
-        urllib.urlretrieve(origin, dataset)
-
-    print '... loading data'
-
-    # Load the dataset
-    f = gzip.open(dataset, 'rb')
-    train_set, valid_set, test_set = cPickle.load(f)
-    f.close()
-    #train_set, valid_set, test_set format: tuple(input, target)
-    #input is an numpy.ndarray of 2 dimensions (a matrix)
-    #witch row's correspond to an example. target is a
-    #numpy.ndarray of 1 dimensions (vector)) that have the same length as
-    #the number of rows in the input. It should give the target
-    #target to the example with the same index in the input.
-
-    def shared_dataset(data_xy, borrow=True):       
-        data_x, data_y = data_xy
-        data_x = data_x.reshape((data_x.shape[0], 28,28))
-        data_y = data_x[:,:,14:].reshape((data_x.shape[0], 28*14))
-        data_x = data_x[:,:,:14].reshape((data_x.shape[0], 28*14))
-        #for j in range(data_x.shape[1]):
-            #data_x[:, j] -= numpy.mean(data_x[:, j])
-        #for j in range(data_y.shape[1]):
-            #data_y[:, j] -= numpy.mean(data_y[:, j])
-        #data_x = data_x[:10000,:]
-        #data_y = data_y[:10000,:]
-
-        #data_y = data_y[:]
-
-        shared_x = theano.shared(numpy.asarray(data_x,
-                                               dtype=theano.config.floatX),
-                                 borrow=borrow)
-        shared_y = theano.shared(numpy.asarray(data_y,
-                                               dtype=theano.config.floatX),
-                                 borrow=borrow)
-        
-        return shared_x, shared_y
-
-    #train_set[0] = train_set[0][:5000,:]
-    #train_set[1] = train_set[1][:5000,:]
-
-    test_set_x, test_set_y = shared_dataset(test_set)
-    valid_set_x, valid_set_y = shared_dataset(valid_set)
-    train_set_x, train_set_y = shared_dataset(train_set)
-
-    rval = [(train_set_x, train_set_y), (valid_set_x, valid_set_y),
-            (test_set_x, test_set_y)]
-    return rval
-
-def plot_weights(w, M=28, N=28, num=10):
-    import numpy as np
-    a=np.zeros((M*num,N*num))
-    for i in range(num*num):
-        m=i%num
-        n=i/num
-        a[m*M:(m+1)*M, n*N:(n+1)*N] = w[i,:].reshape((M,N))
-    pp.imshow(a,interpolation='none',aspect='auto')
-    #pp.show()
 
 if __name__ == '__main__':
     test_SdA_regress()

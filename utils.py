@@ -9,7 +9,110 @@ image from a set of samples or weights.
 
 import numpy
 
+def load_data_half(dataset):
+    ''' Loads the dataset
 
+    :type dataset: string
+    :param dataset: the path to the dataset (here MNIST)
+    '''
+
+    # LOAD DATA #
+    import os
+    import cPickle
+    import gzip
+    import theano
+    # Download the MNIST dataset if it is not present
+    data_dir, data_file = os.path.split(dataset)
+    if data_dir == "" and not os.path.isfile(dataset):
+        # Check if dataset is in the data directory.
+        new_path = os.path.join(
+            os.path.split(__file__)[0],
+            "..",
+            "data",
+            dataset
+        )
+        if os.path.isfile(new_path) or data_file == 'mnist.pkl.gz':
+            dataset = new_path
+
+    if (not os.path.isfile(dataset)) and data_file == 'mnist.pkl.gz':
+        import urllib
+        origin = (
+            'http://www.iro.umontreal.ca/~lisa/deep/data/mnist/mnist.pkl.gz'
+        )
+        print 'Downloading data from %s' % origin
+        urllib.urlretrieve(origin, dataset)
+
+    print '... loading data'
+
+    # Load the dataset
+    f = gzip.open(dataset, 'rb')
+    train_set, valid_set, test_set = cPickle.load(f)
+    f.close()
+    #train_set, valid_set, test_set format: tuple(input, target)
+    #input is an numpy.ndarray of 2 dimensions (a matrix)
+    #witch row's correspond to an example. target is a
+    #numpy.ndarray of 1 dimensions (vector)) that have the same length as
+    #the number of rows in the input. It should give the target
+    #target to the example with the same index in the input.
+
+    def shared_dataset(data_xy, train_xy, borrow=True):       
+        data_x, data_y = data_xy
+        data_x = data_x.reshape((data_x.shape[0], 28,28))
+        data_y = data_x[:,:,14:].reshape((data_x.shape[0], 28*14))
+        data_x = data_x[:,:,:14].reshape((data_x.shape[0], 28*14))
+        t_x, t_y = train_xy
+        t_x = t_x.reshape((t_x.shape[0], 28,28))
+        t_y = t_x[:,:,14:].reshape((t_x.shape[0], 28*14))
+        t_x = t_x[:,:,:14].reshape((t_x.shape[0], 28*14))
+        data_x = data_x - t_x.mean(axis=0)
+        data_y = data_y - t_y.mean(axis=0)
+
+        #for j in range(data_x.shape[1]):
+            #data_x[:, j] -= numpy.mean(data_x[:, j])
+        #for j in range(data_y.shape[1]):
+            #data_y[:, j] -= numpy.mean(data_y[:, j])
+        #data_x = data_x[:5000,:]
+        #data_y = data_y[:5000,:]
+
+        #data_y = data_y[:]
+
+        shared_x = theano.shared(numpy.asarray(data_x,
+                                               dtype=theano.config.floatX),
+                                 borrow=borrow)
+        shared_y = theano.shared(numpy.asarray(data_y,
+                                               dtype=theano.config.floatX),
+                                 borrow=borrow)
+        
+        return shared_x, shared_y
+
+    
+    train_set_x, train_set_y = shared_dataset(train_set, train_set)
+    test_set_x, test_set_y = shared_dataset(test_set, train_set)
+    valid_set_x, valid_set_y = shared_dataset(valid_set, train_set)
+
+    rval = [(train_set_x, train_set_y), (valid_set_x, valid_set_y),
+            (test_set_x, test_set_y)]
+    return rval
+
+
+
+
+def plot_weights(w, M=28, N=28, num=10):
+    import numpy as np
+    try:
+        from matplotlib import pyplot as pp
+        import matplotlib.cm as cm
+    except ImportError:
+        print 'matplotlib is could not be imported'
+
+    a=np.zeros((M*num,N*num))
+    for i in range(num*num):
+        m=i%num
+        n=i/num
+        a[m*M:(m+1)*M, n*N:(n+1)*N] = w[i,:].reshape((M,N))
+    pp.imshow(a,interpolation='none',aspect='auto',cmap=cm.Greys)
+    #pp.show()
+    
 def scale_to_unit_interval(ndar, eps=1e-8):
     """ Scales all values in the ndarray ndar to be between 0 and 1 """
     ndar = ndar.copy()

@@ -2,6 +2,10 @@ import numpy as np
 from scipy.special import expit
 import copy
 
+def tanh(x):
+    return np.tanh(x)
+def tanh_prime(x):
+    return 1.0 - np.tanh(x)**2.0
 def linear(x):
     return x
 def linear_prime(x):
