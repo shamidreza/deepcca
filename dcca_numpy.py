@@ -288,6 +288,16 @@ class netCCA(object):
             self.inputs[i]=self.weights[i-1].dot(self.outputs[i-1])+self.biases[i-1]
             self.outputs[i]=self.fs[i](self.inputs[i])
         return self.outputs[-1]
+    def feedforward_batch(self, X):
+        #Propagates the input from the input layer to the output layer.
+      
+        self.inputs[0]=X
+        self.outputs[0]=X
+        for i in range(1,self.n_layers):
+            self.inputs[i]=(self.weights[i-1].dot(self.outputs[i-1].T)+self.biases[i-1]).T
+            self.outputs[i]=self.fs[i](self.inputs[i])
+        
+        return self.outputs[-1]
  
     def update_weights_batch(self, X, H1, H2, learning_rate=0.1):
         self.learning_rate=learning_rate
@@ -394,12 +404,12 @@ class dCCA(object):
             _H2 = np.dot(H2, self.A2)
             print repeat, 'before', cor_cost(_H1, _H2)
 
-            if first:
-                self.netCCA1.update_weights_batch(self.X1, H1, H2, self.learning_rate)
-                self.netCCA1._update_weights()
-            else:
-                self.netCCA2.update_weights_batch(self.X2, H2, H1, self.learning_rate)
-                self.netCCA2._update_weights()
+            #if first:
+            self.netCCA1.update_weights_batch(self.X1, H1, H2, self.learning_rate)
+            self.netCCA1._update_weights()
+            #else:
+            self.netCCA2.update_weights_batch(self.X2, H2, H1, self.learning_rate)
+            self.netCCA2._update_weights()
             H1 = self.netCCA1.predict(self.X1)
             H2 = self.netCCA2.predict(self.X2)
             self.A1, self.A2, _H1, _H2 = CCA(H1,H2)
