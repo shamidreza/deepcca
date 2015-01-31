@@ -171,7 +171,8 @@ class SdA(object):
                           input=layer_input,
                           n_visible=input_size,
                           n_hidden=hidden_layers_sizes[i],
-                          W=sigmoid_layer.W)
+                          W=sigmoid_layer.W
+                          )
             self.dA_layers.append(dA_layer)
         # end-snippet-2
         
@@ -642,7 +643,7 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=15,
         print '... pre-training the model'
         start_time = time.clock()
         ## Pre-train layer-wise
-        corruption_levels = [.1, .2, .3]
+        corruption_levels = [.5, .2, .3]
         for i in xrange(SdA_out.n_layers):
             # go through pretraining epochs
             for epoch in xrange(pretraining_epochs):
@@ -663,7 +664,7 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=15,
     
         
     if 0: # save aes
-        f=open('aes_normalized_shallow_tanh.pkl', 'w+')
+        f=open('aes_normalized_shallow_tanh_bias.pkl', 'w+')
         import pickle
         pickle.dump(SdA_inp, f)
         pickle.dump(SdA_out, f)
@@ -692,20 +693,20 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=15,
         b1s = []
         for i in range(len(SdA_inp.dA_layers)):
             W1s.append( SdA_inp.dA_layers[i].W.T.eval() )
-            #b1s.append( SdA_inp.dA_layers[i].b.eval() )
-            #b1s[-1] = b1s[-1].reshape((b1s[-1].shape[0], 1))
+            ##b1s.append( SdA_inp.dA_layers[i].b.eval() )
+            ##b1s[-1] = b1s[-1].reshape((b1s[-1].shape[0], 1))
         W2s = []
         b2s = []
         for i in range(len(SdA_out.dA_layers)):
             W2s.append( SdA_out.dA_layers[i].W.T.eval() )
-            #b2s.append( SdA_out.dA_layers[i].b.eval() )
-            #b2s[-1] = b2s[-1].reshape((b2s[-1].shape[0], 1))
+            ##b2s.append( SdA_out.dA_layers[i].b.eval() )
+            ##b2s[-1] = b2s[-1].reshape((b2s[-1].shape[0], 1))
 
-        #W1s[0] = numpy.random.random(W1s[0].shape).astype(numpy.float32)
         numpy.random.seed(0)
         N1=netCCA_nobias(train_y1,param1, W1s)
         N2=netCCA_nobias(train_y2,param2, W2s)
         N = dCCA(train_y1, train_y2, N1, N2)
+        N1.reconstruct(test_set_x.eval()[0,:])
         cnt = 0
         from dcca_numpy import cca_cost, cca, order_cost, cor_cost
         while True:
@@ -714,10 +715,15 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=15,
             _H1 = numpy.dot(X, N.A1)
             _H2 = numpy.dot(Y, N.A2)
             print '****', cnt, cor_cost(_H1, _H2)
+            X1_rec = numpy.tanh(X.dot(N1.weights[0]))
+            X2_rec = numpy.tanh(Y.dot(N2.weights[0]))
+            print '****', 'mse1:', numpy.mean((X1_rec-test_set_x.eval())**2.0)
+            print '****', 'mse2:', numpy.mean((X2_rec-test_set_y.eval())**2.0)
+            
             if cnt % 2:
-                N.train(1, True, 0.01)
+                N.train(5, True, 0.01)
             else:
-                N.train(1, False, 0.01)
+                N.train(5, False, 0.01)
 
             cnt += 1
             f=open('netcca.pkl', 'w+')

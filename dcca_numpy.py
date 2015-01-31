@@ -391,26 +391,43 @@ class netCCA_nobias(object):
         self.weights=[]
         #Bias vector for each layer.
         self.weights_batch=[]
+        self.weights_rec_batch=[]
+
         #Input vector for each layer.
         self.inputs=[]
+        self.inputs_rec=[]
+
         #Output vector for each layer.
         self.outputs=[]
+        self.outputs_rec=[]
+
         #Vector of errors at each layer.
         self.errors=[]
+        self.errors_rec=[]
+
         #We initialise the weights randomly, and fill the other vectors with 1s.
         for layer in range(self.n_layers-1):
             n = self.sizes[layer]
             m = self.sizes[layer+1]
             self.weights.append(Ws[layer])
             self.weights_batch.append(np.random.normal(0,1, (m,n)))
+            self.weights_rec_batch.append(np.random.normal(0,1, (self.sizes[-layer-1-1],self.sizes[-layer-1])))
             self.inputs.append(np.zeros((n,1),dtype=np.float32))
             self.outputs.append(np.zeros((n,1),dtype=np.float32))
+            self.inputs_rec.append(np.zeros((self.sizes[-layer-1],1),dtype=np.float32))
+            self.outputs_rec.append(np.zeros((self.sizes[-layer-1],1),dtype=np.float32))
             self.errors.append(np.zeros((n,1),dtype=np.float32))
+            self.errors_rec.append(np.zeros((self.sizes[-layer-1],1),dtype=np.float32))
+
         #There are only n-1 weight matrices, so we do the last case separately.
         n = self.sizes[-1]
         self.inputs.append(np.zeros((n,1),dtype=np.float32))
-        self.outputs.append(np.zeros((n,1),dtype=np.float32))
+        self.outputs.append(np.zeros((n,1),dtype=np.float32))        
         self.errors.append(np.zeros((n,1),dtype=np.float32))
+        self.inputs_rec.append(np.zeros((self.sizes[0],1),dtype=np.float32))
+        self.outputs_rec.append(np.zeros((self.sizes[0],1),dtype=np.float32))
+        self.errors_rec.append(np.zeros((self.sizes[0],1),dtype=np.float32))
+
     def build_network(self):
         #List of weight matrices taking the output of one layer to the input of the next.
         self.weights=[]
@@ -445,7 +462,12 @@ class netCCA_nobias(object):
         for i in range(1,self.n_layers):
             self.inputs[i]=self.weights[i-1].dot(self.outputs[i-1])
             self.outputs[i]=self.fs[i](self.inputs[i])
-        return self.outputs[-1]
+        self.inputs_rec[0] = self.outputs[i]
+        self.outputs_rec[0] = self.outputs[i]
+        for i in range(self.n_layers-1, 0,-1):
+            self.inputs_rec[i]=self.weights[i-1].T.dot(self.outputs_rec[i-1])
+            self.outputs_rec[i]=self.fs[i](self.inputs_rec[i])
+        return self.outputs[-1], self.outputs_rec[-1]
     def feedforward_batch(self, X):
         #Propagates the input from the input layer to the output layer.
       
@@ -465,6 +487,7 @@ class netCCA_nobias(object):
         for i in range(X.shape[0]):
             self._compute_weights_batchmode(X[i,:], delta[i:i+1,:])
         #self._update_weights()
+        a=0
     def _zero_weights(self):
         for i in range(len(self.weights)):
             self.weights_batch[i][:,:] = 0.0
@@ -483,14 +506,41 @@ class netCCA_nobias(object):
         self.weights[0] = self.weights[0]-self.learning_rate*np.outer(self.errors[1],self.outputs[0])
     def _compute_weights_batchmode(self,x, delta):
         #Update the weight matrices for each layer based on a single input x and target y.
-        output = self.feedforward(x)
-        self.errors[-1]=self.fprimes[-1](self.outputs[-1])*(delta.T)
- 
+        output, rec = self.feedforward(x)
+        
+        # Rec gradient dec
+        self.errors_rec[-1]=self.fprimes[-1](self.outputs_rec[-1])*(rec-x)
+        n=self.n_layers-2
+        for i in xrange(n,0,-1):
+            self.errors_rec[i] = self.fprimes[i](self.inputs_rec[i])*self.weights[i].dot(self.errors_rec[i+1])
+            self.weights_rec_batch[i] += (np.outer(self.errors_rec[i+1],self.outputs_rec[i]))
+        self.errors_rec[0] = self.weights[0].dot(self.errors_rec[1])
+        self.weights_rec_batch[0] += (np.outer(self.errors_rec[1],self.outputs_rec[0]))
+        
+        # DCCA gradient
+        ##self.errors[-1]=self.fprimes[-1](self.outputs[-1])*(delta.T+self.errors_rec[0])
+        self.errors[-1]=self.fprimes[-1](self.outputs[-1])*(self.errors_rec[0]*0.001)
         n=self.n_layers-2
         for i in xrange(n,0,-1):
             self.errors[i] = self.fprimes[i](self.inputs[i])*self.weights[i].T.dot(self.errors[i+1])
-            self.weights_batch[i] += (np.outer(self.errors[i+1],self.outputs[i])+0.00001*self.weights[i])
-        self.weights_batch[0] += (np.outer(self.errors[1],self.outputs[0])+0.00001*self.weights[0])
+            self.weights_batch[i] += (np.outer(self.errors[i+1],self.outputs[i]))
+        self.weights_batch[0] += (np.outer(self.errors[1],self.outputs[0]))
+                
+    def reconstruct(self, x):
+        k=len(x)
+        x.shape=(k,1)
+        inp=x
+        out=x
+        for i in range(1,self.n_layers):
+            inp=self.weights[i-1].dot(out)
+            out=self.fs[i](inp)
+        inp = out
+        out = out
+        for i in range(self.n_layers-1, 0,-1):
+            inp=self.weights[i-1].T.dot(out)
+            out=self.fs[i](inp)
+        return out
+    
     def train(self,n_iter, learning_rate=1):
         #Updates the weights after comparing each input in X with y
         #repeats this process n_iter times.
@@ -513,7 +563,7 @@ class netCCA_nobias(object):
         m = self.sizes[-1]
         ret = np.ones((n,m),dtype=np.float32)
         for i in range(len(X)):
-            ret[i,:] = self.feedforward(X[i])[:,0]
+            ret[i,:] = self.feedforward(X[i])[0][:,0]
         return ret
 
 
@@ -553,9 +603,17 @@ class dCCA(object):
             H1 = self.netCCA1.predict(self.X1)
             H2 = self.netCCA2.predict(self.X2)
             #self.A1, self.A2, _H1, _H2 = CCA(H1,H2)
-            _H1 = np.dot(H1, self.A1)
-            _H2 = np.dot(H2, self.A2)
-            print repeat, 'before', cor_cost(_H1, _H2)
+            #_H1 = np.dot(H1, self.A1)
+            #_H2 = np.dot(H2, self.A2)
+            
+            self.A1, self.A2, _H1, _H2 = CCA(H1,H2)
+
+            print repeat, cor_cost(_H1, _H2)
+            
+            X1_rec = np.tanh(H1.dot(self.netCCA1.weights[0]))
+            X2_rec = np.tanh(H2.dot(self.netCCA2.weights[0]))
+            print repeat, 'mse1:', np.mean((X1_rec-self.X1)**2.0)
+            print repeat, 'mse2:', np.mean((X2_rec-self.X2)**2.0)
 
             #if first:
             self.netCCA1.update_weights_batch(self.X1, H1, H2, self.learning_rate)
@@ -563,10 +621,10 @@ class dCCA(object):
             #else:
             self.netCCA2.update_weights_batch(self.X2, H2, H1, self.learning_rate)
             self.netCCA2._update_weights()
-            H1 = self.netCCA1.predict(self.X1)
-            H2 = self.netCCA2.predict(self.X2)
-            self.A1, self.A2, _H1, _H2 = CCA(H1,H2)
-            print repeat, 'after', cor_cost(_H1, _H2)
+            #H1 = self.netCCA1.predict(self.X1)
+            #H2 = self.netCCA2.predict(self.X2)
+            #self.A1, self.A2, _H1, _H2 = CCA(H1,H2)
+            #print repeat, cor_cost(_H1, _H2)
            
 
 #expit is a fast way to compute logistic using precomputed exp.
