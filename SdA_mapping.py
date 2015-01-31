@@ -50,9 +50,9 @@ except ImportError:
     print 'matplotlib is could not be imported'
 
 def Trelu(x):
-    #return theano.tensor.switch(x<0, 0, x)
+    return theano.tensor.switch(x<1e-06, 1e-06, x)
     #return T.nnet.sigmoid(x)
-    return T.tanh(x)
+    #return T.tanh(x)
 
 # start-snippet-1
 class SdA(object):
@@ -664,14 +664,14 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=15,
     
         
     if 0: # save aes
-        f=open('aes_normalized_shallow_tanh_bias.pkl', 'w+')
+        f=open('aes_shallow_relu_nobias.pkl', 'w+')
         import pickle
         pickle.dump(SdA_inp, f)
         pickle.dump(SdA_out, f)
         f.flush()
         f.close() 
     if 1: # load aes
-        f=open('aes_normalized_shallow_tanh.pkl', 'r')
+        f=open('aes_shallow_relu_nobias.pkl', 'r')
         import pickle
         SdA_inp=pickle.load(f)
         SdA_out=pickle.load(f)
@@ -687,8 +687,8 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=15,
 
         ##param1=((train_y1.shape[1],0,0),(2038, relu, relu_prime),(50, relu, relu_prime))
         ##param2=((train_y2.shape[1],0,0),(1608, relu, relu_prime),(50, relu, relu_prime))
-        param1=((train_y1.shape[1],0,0),(50, tanh, tanh_prime))
-        param2=((train_y2.shape[1],0,0),(50, tanh, tanh_prime))
+        param1=((train_y1.shape[1],0,0),(50, relu, relu_prime))
+        param2=((train_y2.shape[1],0,0),(50, relu, relu_prime))
         W1s = []
         b1s = []
         for i in range(len(SdA_inp.dA_layers)):
@@ -717,9 +717,20 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=15,
             print '****', cnt, cor_cost(_H1, _H2)
             X1_rec = numpy.tanh(X.dot(N1.weights[0]))
             X2_rec = numpy.tanh(Y.dot(N2.weights[0]))
+            param=((50,0,0),(50, relu, relu_prime))
+            from mlp_numpy import NeuralNetwork as NN
+
+            lr=NN(X,Y,param)
+            lr.train(X[:,:],Y[:,:],10, 0.005)
+            Yh=lr.predict(X[:,:])
+            X2_reg = N2.fs[-1](numpy.dot(Yh,N2.weights[0]))
+
+            #X2_reg = N2.fs[-1](numpy.dot(_H1.dot(numpy.linalg.inv(N.A1)),N2.weights[0]))
+
             print '****', 'mse1:', numpy.mean((X1_rec-test_set_x.eval())**2.0)
             print '****', 'mse2:', numpy.mean((X2_rec-test_set_y.eval())**2.0)
-            
+            print '****', 'mse_map:', numpy.mean((X2_reg-test_set_y.eval())**2.0)
+
             if cnt % 2:
                 N.train(5, True, 0.01)
             else:

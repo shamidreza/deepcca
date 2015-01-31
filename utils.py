@@ -64,8 +64,8 @@ def load_data_half(dataset):
         t_x = t_x.reshape((t_x.shape[0], 28,28))
         t_y = t_x[:,:,14:].reshape((t_x.shape[0], 28*14))
         t_x = t_x[:,:,:14].reshape((t_x.shape[0], 28*14))
-        data_x = data_x - t_x.mean(axis=0)
-        data_y = data_y - t_y.mean(axis=0)
+        #data_x = data_x - t_x.mean(axis=0)
+        #data_y = data_y - t_y.mean(axis=0)
 
         #for j in range(data_x.shape[1]):
             #data_x[:, j] -= numpy.mean(data_x[:, j])

@@ -102,7 +102,7 @@ class NeuralNetwork(object):
  
     def update_weights(self,x,y):
         #Update the weight matrices for each layer based on a single input x and target y.
-        output = self.feedforwardnoisy(x)
+        output = self.feedforward(x)
         self.errors[-1]=self.fprimes[-1](self.outputs[-1])*(output-y)
  
         n=self.n_layers-2

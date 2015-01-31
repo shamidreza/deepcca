@@ -515,16 +515,17 @@ class netCCA_nobias(object):
             self.errors_rec[i] = self.fprimes[i](self.inputs_rec[i])*self.weights[i].dot(self.errors_rec[i+1])
             self.weights_rec_batch[i] += (np.outer(self.errors_rec[i+1],self.outputs_rec[i]))
         self.errors_rec[0] = self.weights[0].dot(self.errors_rec[1])
-        self.weights_rec_batch[0] += (np.outer(self.errors_rec[1],self.outputs_rec[0]))
+        self.weights_rec_batch[0] = (np.outer(self.errors_rec[1],self.outputs_rec[0]))
         
         # DCCA gradient
         ##self.errors[-1]=self.fprimes[-1](self.outputs[-1])*(delta.T+self.errors_rec[0])
-        self.errors[-1]=self.fprimes[-1](self.outputs[-1])*(self.errors_rec[0]*0.001)
+        self.errors[-1]=self.fprimes[-1](self.outputs[-1])*(delta.T)+(self.errors_rec[0]*0.000002)
+        #self.errors[-1]=(self.errors_rec[0]*0.000002)
         n=self.n_layers-2
         for i in xrange(n,0,-1):
             self.errors[i] = self.fprimes[i](self.inputs[i])*self.weights[i].T.dot(self.errors[i+1])
             self.weights_batch[i] += (np.outer(self.errors[i+1],self.outputs[i]))
-        self.weights_batch[0] += (np.outer(self.errors[1],self.outputs[0]))
+        self.weights_batch[0] += (np.outer(self.errors[1],self.outputs[0]))+self.weights_rec_batch[0].T*0.000001
                 
     def reconstruct(self, x):
         k=len(x)

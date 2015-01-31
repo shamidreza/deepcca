@@ -47,11 +47,11 @@ except ImportError:
     print 'matplotlib is could not be imported'
     
 def Trelu(x):
-    #return theano.tensor.switch(x<0, 0, x)
+    return theano.tensor.switch(x<1e-06, 1e-06, x)
     #return T.maximum(0,x)
     #return x * (x > 0)
     #return T.nnet.sigmoid(x)
-    return T.tanh(x)
+    #return T.tanh(x)
 try:
     import PIL.Image as Image
 except ImportError:
