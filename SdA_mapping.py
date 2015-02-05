@@ -50,8 +50,8 @@ except ImportError:
     print 'matplotlib is could not be imported'
 
 def Trelu(x):
-    return theano.tensor.switch(x<1e-06, 1e-06, x)
-    #return T.nnet.sigmoid(x)
+    #return theano.tensor.switch(x<1e-06, 1e-06, x)
+    return T.nnet.sigmoid(x)
     #return T.tanh(x)
 
 # start-snippet-1
@@ -465,7 +465,24 @@ class SdA_regress(object):
         (train_set_x, train_set_y) = datasets[0]
         (valid_set_x, valid_set_y) = datasets[1]
         (test_set_x, test_set_y) = datasets[2]
-
+        train_set_x=train_set_x.eval()
+        train_set_y=train_set_y.eval()
+        train_set_x_lab=train_set_x[:1000,:]
+        train_set_x_unlab=train_set_x[1000:,:]
+        train_set_y_lab=train_set_y[:1000,:]
+        train_set_y_unlab=train_set_y[1000:,:]
+        train_set_x_lab=theano.shared(numpy.asarray(train_set_x_lab,
+                                                    dtype=theano.config.floatX),
+                                      borrow=True)
+        train_set_y_lab=theano.shared(numpy.asarray(train_set_y_lab,
+                                                    dtype=theano.config.floatX),
+                                      borrow=True)
+        train_set_x_unlab=theano.shared(numpy.asarray(train_set_x_unlab,
+                                                      dtype=theano.config.floatX),
+                                        borrow=True)
+        train_set_y_unlab=theano.shared(numpy.asarray(train_set_y_unlab,
+                                                      dtype=theano.config.floatX),
+                                        borrow=True)
         # compute number of minibatches for training, validation and testing
         n_valid_batches = valid_set_x.get_value(borrow=True).shape[0]
         n_valid_batches /= batch_size
@@ -531,10 +548,10 @@ class SdA_regress(object):
             outputs=self.finetune_cost,
             updates=updates,
             givens={
-                self.x: train_set_x[
+                self.x: train_set_x_lab[
                     index * batch_size: (index + 1) * batch_size
                 ],
-                self.y: train_set_y[
+                self.y: train_set_y_lab[
                     index * batch_size: (index + 1) * batch_size
                 ]
             },
@@ -542,29 +559,21 @@ class SdA_regress(object):
         )
 
         test_score_i = theano.function(
-            [index],
-            self.errors,
+            [],
+            self.sigmoid_layers[-1].mse(self.y),
             givens={
-                self.x: test_set_x[
-                    index * batch_size: (index + 1) * batch_size
-                ],
-                self.y: test_set_y[
-                    index * batch_size: (index + 1) * batch_size
-                ]
+                self.x: test_set_x,
+                self.y: test_set_y
             },
             name='test'
         )
 
         valid_score_i = theano.function(
-            [index],
-            self.errors,
+            [],
+            self.sigmoid_layers[-1].mse(self.y),
             givens={
-                self.x: valid_set_x[
-                    index * batch_size: (index + 1) * batch_size
-                ],
-                self.y: valid_set_y[
-                    index * batch_size: (index + 1) * batch_size
-                ]
+                self.x: valid_set_x,
+                self.y: valid_set_y
             },
             name='valid'
         )
@@ -577,53 +586,79 @@ class SdA_regress(object):
         def test_score():
             return [test_score_i(i) for i in xrange(n_test_batches)]
 
-        return train_fn, valid_score, test_score
+        return train_fn, valid_score_i, test_score_i
 
 
     
-def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=15,
-             pretrain_lr=0.1, training_epochs=1000,
+def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=10,
+             pretrain_lr=0.1, training_epochs=10000,
              dataset='mnist.pkl.gz', batch_size=20):
     datasets = load_data_half(dataset)
 
     train_set_x, train_set_y = datasets[0]##
     valid_set_x, valid_set_y = datasets[1]##
     test_set_x, test_set_y = datasets[2]##
+    train_set_x=train_set_x.eval()
+    train_set_y=train_set_y.eval()
+    import theano
+    train_set_x_lab=train_set_x[:,:]
+    train_set_x_unlab=train_set_x[:,:]
+    train_set_y_lab=train_set_y[:,:]
+    train_set_y_unlab=train_set_y[:,:]
+    train_set_x_lab=theano.shared(numpy.asarray(train_set_x_lab,
+                                                dtype=theano.config.floatX),
+                                  borrow=True)
+    train_set_y_lab=theano.shared(numpy.asarray(train_set_y_lab,
+                                                dtype=theano.config.floatX),
+                                  borrow=True)
+    train_set_x_unlab=theano.shared(numpy.asarray(train_set_x_unlab,
+                                                  dtype=theano.config.floatX),
+                                    borrow=True)
+    train_set_y_unlab=theano.shared(numpy.asarray(train_set_y_unlab,
+                                                  dtype=theano.config.floatX),
+                                    borrow=True)
 
     # compute number of minibatches for training, validation and testing
-    n_train_batches = train_set_x.get_value(borrow=True).shape[0]
-    n_train_batches /= batch_size
+    n_train_batches_l = train_set_y_lab.eval().shape[0]
+    n_train_batches_l /= batch_size
+    n_train_batches_u = train_set_y_unlab.eval().shape[0]
+    n_train_batches_u /= batch_size
+    # compute number of minibatches for training, validation and testing
+    #n_train_batches = train_set_x.get_value(borrow=True).shape[0]
+    #n_train_batches /= batch_size
 
     # numpy random generator
     # start-snippet-3
     numpy_rng = numpy.random.RandomState(89677)
     print '... building the model'
     # construct the stacked denoising autoencoder class
+    #from SdA_orig import SdA as SdA_old
+    hidden_layer_size = 100
     SdA_inp = SdA(numpy_rng,
                   n_ins=392,
-                  hidden_layers_sizes=[50]
+                  hidden_layers_sizes=[hidden_layer_size]
     )
     SdA_out = SdA(numpy_rng,
                   n_ins=392,
-                  hidden_layers_sizes=[50]
+                  hidden_layers_sizes=[hidden_layer_size]
     )
         
     # PRETRAINING THE MODEL #
     if 0 : # pretrain inp ae
         print '... getting the pretraining functions for INPUT AE'
-        pretraining_fns = SdA_inp.pretraining_functions(train_set_x=train_set_x,
+        pretraining_fns = SdA_inp.pretraining_functions(train_set_x=train_set_x_unlab,
                                                     batch_size=batch_size)
     
         print '... pre-training the model'
         start_time = time.clock()
         ## Pre-train layer-wise
-        corruption_levels = [.5, .1, .3]
+        corruption_levels = [.1, .2, .3]
         for i in xrange(SdA_inp.n_layers):
             # go through pretraining epochs
             for epoch in xrange(pretraining_epochs):
                 # go through the training set
                 c = []
-                for batch_index in xrange(n_train_batches):
+                for batch_index in xrange(n_train_batches_u):
                     c.append(pretraining_fns[i](index=batch_index,
                              corruption=corruption_levels[i],
                              lr=pretrain_lr))
@@ -637,7 +672,7 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=15,
                               ' ran for %.2fm' % ((end_time - start_time) / 60.))
     if 0 : # pretrain out ae
         print '... getting the pretraining functions for OUTPUT AE'
-        pretraining_fns = SdA_out.pretraining_functions(train_set_x=train_set_y,
+        pretraining_fns = SdA_out.pretraining_functions(train_set_x=train_set_y_unlab,
                                                     batch_size=batch_size)
     
         print '... pre-training the model'
@@ -649,7 +684,7 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=15,
             for epoch in xrange(pretraining_epochs):
                 # go through the training set
                 c = []
-                for batch_index in xrange(n_train_batches):
+                for batch_index in xrange(n_train_batches_u):
                     c.append(pretraining_fns[i](index=batch_index,
                              corruption=corruption_levels[i],
                              lr=pretrain_lr))
@@ -664,14 +699,14 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=15,
     
         
     if 0: # save aes
-        f=open('aes_shallow_relu_nobias.pkl', 'w+')
+        f=open('aes_shallow_sig_nobias.pkl', 'w+')
         import pickle
         pickle.dump(SdA_inp, f)
         pickle.dump(SdA_out, f)
         f.flush()
         f.close() 
-    if 1: # load aes
-        f=open('aes_shallow_relu_nobias.pkl', 'r')
+    if 0: # load aes
+        f=open('aes_shallow_sig_nobias.pkl', 'r')
         import pickle
         SdA_inp=pickle.load(f)
         SdA_out=pickle.load(f)
@@ -680,15 +715,15 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=15,
     if 1: # cca
         from dcca_numpy import netCCA_nobias, netCCA, dCCA
         from mlp_numpy import expit, logistic_prime, linear, linear_prime, relu, relu_prime, tanh, tanh_prime
-        train_y1 = train_set_x.eval()
-        train_y2 = train_set_y.eval()
+        train_y1 = train_set_x_lab.eval()
+        train_y2 = train_set_y_lab.eval()
         test_y1 = test_set_x.eval()
         test_y2 = test_set_y.eval()
 
         ##param1=((train_y1.shape[1],0,0),(2038, relu, relu_prime),(50, relu, relu_prime))
         ##param2=((train_y2.shape[1],0,0),(1608, relu, relu_prime),(50, relu, relu_prime))
-        param1=((train_y1.shape[1],0,0),(50, relu, relu_prime))
-        param2=((train_y2.shape[1],0,0),(50, relu, relu_prime))
+        param1=((train_y1.shape[1],0,0),(hidden_layer_size, expit, logistic_prime))
+        param2=((train_y2.shape[1],0,0),(hidden_layer_size, expit, logistic_prime))
         W1s = []
         b1s = []
         for i in range(len(SdA_inp.dA_layers)):
@@ -717,7 +752,7 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=15,
             print '****', cnt, cor_cost(_H1, _H2)
             X1_rec = numpy.tanh(X.dot(N1.weights[0]))
             X2_rec = numpy.tanh(Y.dot(N2.weights[0]))
-            param=((50,0,0),(50, relu, relu_prime))
+            param=((hidden_layer_size,0,0),(hidden_layer_size, relu, relu_prime))
             from mlp_numpy import NeuralNetwork as NN
 
             lr=NN(X,Y,param)
@@ -732,9 +767,9 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=15,
             print '****', 'mse_map:', numpy.mean((X2_reg-test_set_y.eval())**2.0)
 
             if cnt % 2:
-                N.train(5, True, 0.01)
+                N.train(5, True, 10000.0)
             else:
-                N.train(5, False, 0.01)
+                N.train(5, False, 10000.0)
 
             cnt += 1
             f=open('netcca.pkl', 'w+')
@@ -743,7 +778,7 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=15,
             pickle.dump(N, f)
             f.flush()
             f.close() 
-            if cnt == 2000:
+            if cnt == 200:
                 break
         for i in range(len(SdA_inp.dA_layers)):
             SdA_inp.dA_layers[i].W = theano.shared( N1.weights[i].T )
@@ -759,7 +794,7 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=15,
 
         h1 = T.matrix('x')  # the data is presented as rasterized images
         h2 = T.matrix('y')  # the labels are presented as 1D vector of
-        log_reg = HiddenLayer(numpy_rng, h1, 50, 50)
+        log_reg = HiddenLayer(numpy_rng, h1, hidden_layer_size, hidden_layer_size)
 
         if 1: # for middle layer
             learning_rate = 0.01
@@ -767,7 +802,7 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=15,
                 [],
                 SdA_inp.sigmoid_layers[-1].output,
                 givens={
-                    SdA_inp.sigmoid_layers[0].input: train_set_x
+                    SdA_inp.sigmoid_layers[0].input: train_set_x_lab
                 },
                 name='fprop_inp'
             )
@@ -775,15 +810,16 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=15,
                 [],
                 SdA_out.sigmoid_layers[-1].output,
                 givens={
-                    SdA_out.sigmoid_layers[0].input: train_set_y
+                    SdA_out.sigmoid_layers[0].input: train_set_y_lab
                 },
                 name='fprop_out'
             )
-            H11=fprop_inp() 
-            H21=fprop_out()
-            H1=N1.predict(train_set_x.eval())
-            H2=N2.predict(train_set_y.eval())
-
+            #H11=fprop_inp() 
+            #H21=fprop_out()
+            ##H1=N1.predict(train_set_x.eval())
+            ##H2=N2.predict(train_set_y.eval())
+            H1=fprop_inp()
+            H2=fprop_out()
             H1=theano.shared(H1)
             H2=theano.shared(H2)
             # compute the gradients with respect to the model parameters
@@ -818,8 +854,8 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=15,
         log_reg,
         numpy_rng=numpy_rng,
         n_inp=28*28//2,
-        hidden_layers_sizes_inp=[500, 500],
-        hidden_layers_sizes_out=[500, 500],
+        hidden_layers_sizes_inp=[hidden_layer_size],
+        hidden_layers_sizes_out=[hidden_layer_size],
         n_out=28*28//2
     )
     # end-snippet-3 start-snippet-4
@@ -838,12 +874,12 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=15,
         
     print '... finetunning the model'
     # early-stopping parameters
-    patience = 10 * n_train_batches  # look as this many examples regardless
+    patience = 10 * n_train_batches_l  # look as this many examples regardless
     patience_increase = 2.  # wait this much longer when a new best is
                             # found
     improvement_threshold = 0.995  # a relative improvement of this much is
                                    # considered significant
-    validation_frequency = min(n_train_batches, patience / 2)
+    validation_frequency = min(n_train_batches_l, patience / 2)
                                   # go through this many
                                   # minibatche before checking the network
                                   # on the validation set; in this case we
@@ -863,17 +899,17 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=15,
         },
         name='fprop'
     )
-    while (epoch < training_epochs) and (not done_looping):
+    while True:
         epoch = epoch + 1
-        for minibatch_index in xrange(n_train_batches):
+        for minibatch_index in xrange(n_train_batches_l):
             minibatch_avg_cost = train_fn(minibatch_index)
-            iter = (epoch - 1) * n_train_batches + minibatch_index
+            iter = (epoch - 1) * n_train_batches_l + minibatch_index
 
             if (iter + 1) % validation_frequency == 0:
                 validation_losses = validate_model()
                 this_validation_loss = numpy.mean(validation_losses)
                 print('epoch %i, minibatch %i/%i, validation error %f %%' %
-                      (epoch, minibatch_index + 1, n_train_batches,
+                      (epoch, minibatch_index + 1, n_train_batches_l,
                        this_validation_loss ))
 
                 # if we got the best validation score until now
@@ -895,12 +931,12 @@ def test_SdA_regress(finetune_lr=0.05, pretraining_epochs=15,
                     test_score = numpy.mean(test_losses)
                     print(('     epoch %i, minibatch %i/%i, test error of '
                            'best model %f %%') %
-                          (epoch, minibatch_index + 1, n_train_batches,
+                          (epoch, minibatch_index + 1, n_train_batches_l,
                            test_score ))
 
             if patience <= iter:
                 done_looping = True
-                break
+                #break
             if 0: # vis weights
                 fprop = theano.function(
                     [],

@@ -71,16 +71,20 @@ class HiddenLayer(object):
         
     def mse(self, y):
         return T.mean((self.output-y)**2)
-
+    def crossentropy(self, y):
+        L = - T.sum(self.output * T.log(y) + (1 - self.output) * T.log(1 - y), axis=1)
+        return T.mean(L)
    
 class MLP(object):
-    def __init__(self, rng, input, n_in, n_hidden, n_out):        
+    def __init__(self, rng, input, n_in, n_hidden, n_out, W1=None, b1=None, W2=None, b2=None):        
         self.hiddenLayer = HiddenLayer(
             rng=rng,
             input=input,
             n_in=n_in,
             n_out=n_hidden,
-            activation=T.nnet.sigmoid
+            activation=T.nnet.sigmoid,
+            W=W1,
+            b=b1
         )
 
         self.lastLayer = HiddenLayer(
@@ -88,7 +92,9 @@ class MLP(object):
             input=self.hiddenLayer.output,
             n_in=n_hidden,
             n_out=n_out,
-            activation=T.nnet.sigmoid
+            activation=T.nnet.sigmoid, 
+            W=W1,
+            b=b1
         )
      
         self.L1 = (

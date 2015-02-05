@@ -1,5 +1,8 @@
 import numpy as np
-import scipy.linalg
+
+from numpy.linalg import inv, lstsq, cholesky
+from scipy.linalg import sqrtm
+
 try:
     from matplotlib import pyplot as pp
     import matplotlib.cm as cm
@@ -17,9 +20,31 @@ def order_cost(H1,H2):
     a,b,x,y=CCA(H1,H2)
     return cor_cost(x,y), cca(x,y)
 def mat_pow(matrix):
-    return scipy.linalg.sqrtm(np.linalg.inv(matrix))
+    return sqrtm(inv(matrix))
+def stable_inverse_Aneg1_dot_B(A,B):
+    # solves x=A^-1.B or A.x=B
+    return lstsq(A,B)[0]
+
+def solve_cholesky(A,B):
+    L=cholesky(A)
+    #assert np.allclose(np.dot(L, L.T),A)
+    y=lstsq(L,B)[0]
+    return lstsq(L.T,y)
+def stable_inverse_Aneg1_dot_B_cholesky(A,B):
+    # solves x=A^-1.B or A.x=Bm where A=L.L.T
+    ##L=cholesky(A)
+    ##assert np.allclose(np.dot(L, L.T),A)
+    ##y=lstsq(L,B)[0]
+    return solve_cholesky(A,B)[0]
+    ##return lstsq(L.T,y)[0]
+def stable_inverse_A_dot_Bneg1(A,B):
+    # solves x=A.B^-1 or x.A=B
+    return lstsq(B, A.T)[0].T
+def stable_inverse_A_dot_Bneg1_cholesky(A,B):
+    # solves x=A.B^-1 or x.A=B
+    return solve_cholesky(B, A.T)[0].T
 def mat_pow2(matrix):
-    return np.linalg.inv(scipy.linalg.sqrtm(matrix))
+    return inv(sqrtm(matrix))
 
     #return matrix ** -0.5        
 from mlp_numpy import *
@@ -57,10 +82,18 @@ def cca(H1, H2):
     SigmaHat22 = SigmaHat22 + r1*np.identity(SigmaHat22.shape[0], dtype=np.float32)
     SigmaHat11_2=mat_pow(SigmaHat11).real.astype(np.float32)
     SigmaHat22_2=mat_pow(SigmaHat22).real.astype(np.float32)
-    Tval = np.dot(SigmaHat11_2, np.dot(SigmaHat12, SigmaHat22_2))
-    U, D, V, = np.linalg.svd(Tval)
+    ##TMP = np.dot(SigmaHat12, SigmaHat22_2) #unstable
+    TMP2 = stable_inverse_A_dot_Bneg1(SigmaHat12, sqrtm(SigmaHat22))#np.dot(SigmaHat12, SigmaHat22_2)
+    TMP3 = stable_inverse_A_dot_Bneg1_cholesky(SigmaHat12, sqrtm(SigmaHat22))#np.dot(SigmaHat12, SigmaHat22_2)
 
-    corr =  np.trace(np.dot(Tval.T, Tval))**(0.5)
+    ##Tval = np.dot(SigmaHat11_2, TMP) #unstable
+    Tval = stable_inverse_Aneg1_dot_B(sqrtm(SigmaHat11), TMP2)
+    Tval3 = stable_inverse_Aneg1_dot_B_cholesky(sqrtm(SigmaHat11), TMP3)
+
+    ##U, D, V, = np.linalg.svd(Tval)
+
+    ## corr =  np.trace(np.dot(Tval.T, Tval))**(0.5) #wrong
+    corr =  np.trace(sqrtm(np.dot(Tval.T, Tval)))
     return corr
 
 def cca_prime(H1, H2):
@@ -74,7 +107,8 @@ def cca_prime(H1, H2):
     H2bar += np.random.random(H2bar.shape)*0.00001
     r1 = 0.00000001
     m = H1.shape[0]
-    
+    #H1bar = H1 - (1.0/m)*np.dot(H1, np.ones((m,m), dtype=np.float32))
+    #H2bar = H2 - (1.0/m)*np.dot(H2, np.ones((m,m), dtype=np.float32))
     SigmaHat12 = (1.0/(m-1))*np.dot(H1bar, H2bar.T)
     SigmaHat11 = (1.0/(m-1))*np.dot(H1bar, H1bar.T)
     SigmaHat11 = SigmaHat11 + r1*np.identity(SigmaHat11.shape[0], dtype=np.float32)
@@ -82,7 +116,11 @@ def cca_prime(H1, H2):
     SigmaHat22 = SigmaHat22 + r1*np.identity(SigmaHat22.shape[0], dtype=np.float32)
     SigmaHat11_2=mat_pow(SigmaHat11).real.astype(np.float32)
     SigmaHat22_2=mat_pow(SigmaHat22).real.astype(np.float32)
-    Tval = np.dot(SigmaHat11_2, np.dot(SigmaHat12, SigmaHat22_2))
+    ##TMP = np.dot(SigmaHat12, SigmaHat22_2) #unstable
+    TMP3 = stable_inverse_A_dot_Bneg1_cholesky(SigmaHat12, sqrtm(SigmaHat22))#np.dot(SigmaHat12, SigmaHat22_2)
+
+    ##Tval = np.dot(SigmaHat11_2, TMP) #unstable
+    Tval = stable_inverse_Aneg1_dot_B_cholesky(sqrtm(SigmaHat11), TMP3)
     U, D, V, = np.linalg.svd(Tval)
     D=np.diag(D)
     UVT = np.dot(U, V)
@@ -493,7 +531,7 @@ class netCCA_nobias(object):
             self.weights_batch[i][:,:] = 0.0
     def _update_weights(self):
         for i in range(len(self.weights)):
-            self.weights[i] = self.weights[i]-self.learning_rate*self.weights_batch[i]
+            self.weights[i] = self.weights[i]-self.learning_rate*self.weights_batch[i]*(1.0/50000.0)##
     def update_weights_online(self,x, delta):
         #Update the weight matrices for each layer based on a single input x and target y.
         output = self.feedforward(x)
@@ -519,14 +557,24 @@ class netCCA_nobias(object):
         
         # DCCA gradient
         ##self.errors[-1]=self.fprimes[-1](self.outputs[-1])*(delta.T+self.errors_rec[0])
-        self.errors[-1]=self.fprimes[-1](self.outputs[-1])*(delta.T)+(self.errors_rec[0]*0.000002)
-        #self.errors[-1]=(self.errors_rec[0]*0.000002)
+        std_delta = (self.fprimes[-1](self.outputs[-1])*(delta.T)).std()+1e-06
+        std_err = self.errors_rec[0].std()+1e-06
+        coef = 1.0#std_err/std_delta
+        self.errors[-1]=(self.fprimes[-1](self.outputs[-1])*(delta.T))*coef##+(self.errors_rec[0])
+        ##self.errors[-1]=self.errors_rec[0]
         n=self.n_layers-2
         for i in xrange(n,0,-1):
             self.errors[i] = self.fprimes[i](self.inputs[i])*self.weights[i].T.dot(self.errors[i+1])
             self.weights_batch[i] += (np.outer(self.errors[i+1],self.outputs[i]))
-        self.weights_batch[0] += (np.outer(self.errors[1],self.outputs[0]))+self.weights_rec_batch[0].T*0.000001
+        std_w_err = self.weights_rec_batch[0].T.std()+1e-06
+        std_w_delta = (np.outer(self.errors[1],self.outputs[0])).std()+1e-06
+        coef = std_w_err/std_w_delta
                 
+        ##self.weights_batch[0] += (np.outer(self.errors[1],self.outputs[0])*coef)+self.weights_rec_batch[0].T
+        self.weights_batch[0] += (np.outer(self.errors[1],self.outputs[0]))#+self.weights_rec_batch[0].T
+
+        ##self.weights_batch[0] += (np.outer(self.errors[1],self.outputs[0]))+self.weights_rec_batch[0].T
+    
     def reconstruct(self, x):
         k=len(x)
         x.shape=(k,1)
@@ -631,6 +679,13 @@ class dCCA(object):
 #expit is a fast way to compute logistic using precomputed exp.
 from scipy.special import expit
 def test_regression(plots=False):
+    if 1:
+        np.random.seed(0)
+        X1=np.random.random((1000,50))
+        X2=np.random.random((1000,50))
+        X2[:,25:] = X1[:,:25]
+        print cor_cost(X1,X2)
+        cca(X1,X2)
     #First create the data.
     n=200
     X=np.linspace(0,3*np.pi,num=n)
@@ -638,7 +693,8 @@ def test_regression(plots=False):
     #y1=np.sin(X)    
     #y2=np.sin(X+0.8*np.pi)
     datasets = load_data_half('mnist.pkl.gz')
-
+   
+        
     train_set_x, train_set_y = datasets[0]
     valid_set_x, valid_set_y = datasets[1]
     test_set_x, test_set_y = datasets[2]
