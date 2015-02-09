@@ -9,6 +9,55 @@ image from a set of samples or weights.
 
 import numpy
 
+def load_vc(dataset='../gitlab/voice-conversion/src/test/data/clb_slt_MCEP24_static_span0.data'):
+    import sys
+    sys.path.append('../gitlab/voice-conversion/src')
+    import voice_conversion
+    
+    import pickle
+    f=open(dataset,'r')
+    vcdata=pickle.load(f)
+    x=vcdata['aligned_data1'][:,:24]
+    y=vcdata['aligned_data2'][:,:24]
+    num = x.shape[0]
+    st_train = 0
+    en_train = int(num * (64.0/200.0))
+    st_valid = en_train
+    en_valid = en_train+int(num * (36.0/200.0))
+    st_test = en_valid
+    en_test = num
+    
+    x_mean = x[st_train:en_train,:].mean(axis=0)
+    y_mean = y[st_train:en_train,:].mean(axis=0)
+    x_std = x[st_train:en_train,:].std(axis=0)
+    y_std = y[st_train:en_train,:].std(axis=0)
+    x -= x_mean
+    y -= y_mean
+    x /= x_std
+    y /= y_std
+
+    import theano
+    train_set_x = theano.shared(numpy.asarray(x[st_train:en_train,:],
+                                dtype=theano.config.floatX),
+                                 borrow=True)
+    train_set_y = theano.shared(numpy.asarray(y[st_train:en_train,:],
+                                dtype=theano.config.floatX),
+                                 borrow=True)
+    test_set_x = theano.shared(numpy.asarray(x[st_test:en_test,:],
+                                dtype=theano.config.floatX),
+                                 borrow=True)
+    test_set_y = theano.shared(numpy.asarray(y[st_test:en_test,:],
+                                dtype=theano.config.floatX),
+                                 borrow=True)
+    valid_set_x = theano.shared(numpy.asarray(x[st_valid:en_valid,:],
+                                dtype=theano.config.floatX),
+                                 borrow=True)
+    valid_set_y = theano.shared(numpy.asarray(y[st_valid:en_valid,:],
+                                dtype=theano.config.floatX),
+                                 borrow=True)
+    rval = [(train_set_x, train_set_y), (valid_set_x, valid_set_y),
+            (test_set_x, test_set_y)]
+    return rval, x_mean, y_mean, x_std, y_std
 def load_data_half(dataset):
     ''' Loads the dataset
 

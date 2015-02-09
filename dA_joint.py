@@ -41,7 +41,7 @@ import theano.tensor as T
 from theano.tensor.shared_randomstreams import RandomStreams
 
 from logistic_sgd import load_data
-from utils import tile_raster_images
+from utils import tile_raster_images, load_vc
 
 try:
     import PIL.Image as Image
@@ -260,11 +260,11 @@ class dA_joint(object):
                        self.W2, self.b2, self.b2_prime
         ]
         # end-snippet-1
-        self.output1 = T.nnet.sigmoid(T.dot(self.x1, self.W1) + self.b1)
-        self.output2 = T.nnet.sigmoid(T.dot(self.x2, self.W2) + self.b2)
-        self.rec1 = T.nnet.sigmoid(T.dot(self.output1, self.W1_prime) + self.b1_prime)
-        self.rec2 = T.nnet.sigmoid(T.dot(self.output2, self.W2_prime) + self.b2_prime)
-        self.reg = T.nnet.sigmoid(T.dot(self.output1, self.W2_prime) + self.b2_prime)
+        self.output1 = T.tanh(T.dot(self.x1, self.W1) + self.b1)
+        self.output2 = T.tanh(T.dot(self.x2, self.W2) + self.b2)
+        self.rec1 = T.tanh(T.dot(self.output1, self.W1_prime) + self.b1_prime)
+        self.rec2 = T.tanh(T.dot(self.output2, self.W2_prime) + self.b2_prime)
+        self.reg = T.tanh(T.dot(self.output1, self.W2_prime) + self.b2_prime)
         self.cor_reg = theano.shared(numpy.float32(1.0),name='reg')
     def get_corrupted_input(self, input1, input2, corruption_level):
         """This function keeps ``1-corruption_level`` entries of the inputs the
@@ -298,7 +298,7 @@ class dA_joint(object):
 
     def get_hidden_values(self, input1, input2):
         """ Computes the values of the hidden layer """
-        return T.nnet.sigmoid(T.dot(input1, self.W1) + self.b1), T.nnet.sigmoid(T.dot(input2, self.W2) + self.b2)
+        return T.tanh(T.dot(input1, self.W1) + self.b1), T.tanh(T.dot(input2, self.W2) + self.b2)
     
     
 
@@ -307,8 +307,8 @@ class dA_joint(object):
         hidden layer
 
         """
-        a = T.nnet.sigmoid(T.dot(hidden1, self.W1_prime) + self.b1_prime)
-        b = T.nnet.sigmoid(T.dot(hidden2, self.W2_prime) + self.b2_prime)
+        a = T.tanh(T.dot(hidden1, self.W1_prime) + self.b1_prime)
+        b = T.tanh(T.dot(hidden2, self.W2_prime) + self.b2_prime)
         return a, b
 
     def get_cost_updates(self, corruption_level, learning_rate):
@@ -327,8 +327,11 @@ class dA_joint(object):
         L_X1_x2 = - T.sum(y1 * T.log(y2) + (1 - y1) * T.log(1 - y2), axis=1)
         L_X2_x1 = - T.sum(y2 * T.log(y1) + (1 - y2) * T.log(1 - y1), axis=1)
         #L_X1_x2 = T.mean(T.mean((y1-y2)**2,1))
+        L_x1 = T.mean((z1-self.x1)**2) #+ (1 - self.x1) * T.log(1 - z1), axis=1)
+        L_x2 = T.mean((z2-self.x2)**2)
+        L_X1_x2 = T.mean((y1-y2)**2)
         ##cost = T.mean(L_x1) + T.mean(L_x2) + self.cor_reg*T.mean(L_X1_x2)+0.001*self.L1+001*self.L2_sqr# + 0.2*T.mean(L_X2_x1)
-        cost = T.mean(L_x1) + T.mean(L_x2) + T.mean(L_X1_x2) #+ .001*self.L2_sqr# + 0.2*T.mean(L_X2_x1)
+        cost = T.mean(L_x1) + T.mean(L_x2) #+ T.mean(L_X1_x2) #+ .001*self.L2_sqr# + 0.2*T.mean(L_X2_x1)
 
         # compute the gradients of the cost of the `dA` with respect
         # to its parameters
@@ -342,7 +345,7 @@ class dA_joint(object):
         return (cost, updates)
 
     
-def test_dA(learning_rate=0.1, training_epochs=15000,
+def test_dA(learning_rate=0.01, training_epochs=15000,
             dataset='mnist.pkl.gz',
             batch_size=5, output_folder='dA_plots'):
 
@@ -361,11 +364,14 @@ def test_dA(learning_rate=0.1, training_epochs=15000,
 
     """
     ##datasets = load_data(dataset)
-    from SdA_mapping import load_data_half
-    datasets = load_data_half(dataset)
-
+    #from SdA_mapping import load_data_half
+    #datasets = load_data_half(dataset)
+    print 'loading data'
+    datasets, x_mean, y_mean, x_std, y_std = load_vc()
     train_set_x, train_set_y = datasets[0]
+    valid_set_x, valid_set_y = datasets[1]  
     test_set_x, test_set_y = datasets[2]
+    print 'loaded data'
 
     # compute number of minibatches for training, validation and testing
     n_train_batches = train_set_x.get_value(borrow=True).shape[0] / batch_size
@@ -396,6 +402,8 @@ def test_dA(learning_rate=0.1, training_epochs=15000,
 
         #n_hidden=500
     #)
+    print 'initialize functions'
+
     da = dA_joint(
         numpy_rng=rng,
         theano_rng=theano_rng,
@@ -403,8 +411,10 @@ def test_dA(learning_rate=0.1, training_epochs=15000,
         input2=x2,
         cor_reg=cor_reg,
 
-        n_visible1=28 * 28/2,
-        n_visible2=28 * 28/2,
+        #n_visible1=28 * 28/2,
+        #n_visible2=28 * 28/2,
+        n_visible1=24,
+        n_visible2=24,
         n_hidden=50
     )
 
@@ -438,6 +448,22 @@ def test_dA(learning_rate=0.1, training_epochs=15000,
                },
                name='fprop_x2'
     )
+    fprop_x1t = theano.function(
+               [],
+               outputs=da.output1,
+               givens={
+                   x1: train_set_x
+               },
+               name='fprop_x1'
+    )
+    fprop_x2t = theano.function(
+               [],
+               outputs=da.output2,
+               givens={
+                   x2: train_set_y
+               },
+               name='fprop_x2'
+    )
     rec_x1 = theano.function(
                [],
                outputs=da.rec1,
@@ -463,12 +489,13 @@ def test_dA(learning_rate=0.1, training_epochs=15000,
                name='fprop_x12x2'
     )
     updates_reg = [
-            (da.cor_reg, da.cor_reg+theano.shared(numpy.float32(0.5)))
+            (da.cor_reg, da.cor_reg+theano.shared(numpy.float32(0.1)))
     ]
     update_reg = theano.function(
         [],
         updates=updates_reg
     )
+    print 'initialize functions ended'
 
     
     start_time = time.clock()
@@ -476,6 +503,13 @@ def test_dA(learning_rate=0.1, training_epochs=15000,
     ############
     # TRAINING #
     ############
+    print 'training started'
+    X1=test_set_x.eval()
+    X1 *= x_std
+    X1 += x_mean
+    X2=test_set_y.eval()
+    X2 *= y_std
+    X2 += y_mean
     from dcca_numpy import cor_cost
     # go through training epochs
     for epoch in xrange(training_epochs):
@@ -490,14 +524,65 @@ def test_dA(learning_rate=0.1, training_epochs=15000,
         
         X1H=rec_x1()
         X2H=rec_x2()
-        print 'Training epoch'
-        print 'Reconstruction ', numpy.mean(numpy.mean((X1H-test_set_x.eval())**2,1)),\
-              numpy.mean(numpy.mean((X2H-test_set_y.eval())**2,1))
-
-        X2H=fprop_x1_to_x2()
-        print 'Regression ', numpy.mean(numpy.mean((X2H-test_set_y.eval())**2,1))
+        X1H *= x_std
+        X1H += x_mean
+        X2H *= y_std
+        X2H += y_mean
         H1=fprop_x1()
         H2=fprop_x2()
+        print 'Training epoch'
+        print 'Reconstruction ', numpy.mean(numpy.mean((X1H-X1)**2,1)),\
+              numpy.mean(numpy.mean((X2H-X2)**2,1))
+        
+        if epoch%5 == 2 : # pretrain middle layer
+            print '... pre-training MIDDLE layer'
+            H1t=fprop_x1t()
+            H2t=fprop_x2t()
+            h1 = T.matrix('x')  # the data is presented as rasterized images
+            h2 = T.matrix('y')  # the labels are presented as 1D vector of
+            from mlp import HiddenLayer
+            numpy_rng = numpy.random.RandomState(89677)
+            log_reg = HiddenLayer(numpy_rng, h1, 50, 50, activation=T.tanh)
+
+            if 1: # for middle layer
+                learning_rate = 0.1
+            
+                #H1=theano.shared(H1)
+                #H2=theano.shared(H2)
+                # compute the gradients with respect to the model parameters
+                logreg_cost = log_reg.mse(h2)
+    
+                gparams = T.grad(logreg_cost, log_reg.params)
+        
+                # compute list of fine-tuning updates
+                updates = [
+                    (param, param - gparam * learning_rate)
+                    for param, gparam in zip(log_reg.params, gparams)
+                ]
+    
+                train_fn_middle = theano.function(
+                    inputs=[],
+                    outputs=logreg_cost,
+                    updates=updates,
+                    givens={
+                        h1: theano.shared(H1t),
+                        h2: theano.shared(H2t)
+                    },
+                    name='train_middle'
+                )
+            epoch = 0
+            while epoch < 100:
+                print epoch, train_fn_middle()
+                epoch += 1
+            
+            ##X2H=fprop_x1_to_x2()
+            X2H=numpy.tanh(H1.dot(log_reg.W.eval())+log_reg.b.eval())
+            X2H=numpy.tanh(X2H.dot(da.W2_prime.eval())+da.b2_prime.eval())
+
+            X2H *= y_std
+            X2H += y_mean
+            print 'Regression ', numpy.mean(numpy.mean((X2H-X2)**2,1))
+        
         print 'Correlation ', cor_cost(H1, H2)
     end_time = time.clock()
 
