@@ -307,7 +307,8 @@ class CCALayer(HiddenLayer):
         SigmaHat22 = (1.0/(m-1))*T.dot(H2bar, H2bar.T)
         SigmaHat22 = SigmaHat22 + self.r2*T.identity_like(SigmaHat22)
         Tval = T.dot(SigmaHat11**(-0.5), T.dot(SigmaHat12, SigmaHat22**(-0.5)))
-        corr = T.nlinalg.trace(T.dot(Tval.T, Tval))**(0.5)
+        # corr = T.nlinalg.trace(T.dot(Tval.T, Tval))**(0.5) # identied as wrong by James Chapman, should be matrix square root not element-wise
+        corr =  np.trace(sqrtm(np.dot(Tval.T, Tval)))
         self.SigmaHat11 = SigmaHat11
         self.SigmaHat12 = SigmaHat12
         self.SigmaHat22 = SigmaHat22
